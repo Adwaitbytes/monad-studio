@@ -1,0 +1,244 @@
+/**
+ * Contract Migration API Endpoint
+ *
+ * Fetches contracts from Ethereum/Sepolia, analyzes for Monad compatibility,
+ * and provides optimized code with auto-fixes applied.
+ */
+
+import { NextResponse } from 'next/server';
+import {
+  fetchContractSource,
+  analyzeForMigration,
+  checkMonadCompatibility,
+  transformForMonad,
+  NetworkType,
+  MigrationResult,
+} from '@/lib/migrationTool';
+
+// Rate limiting: simple in-memory cache
+const requestCache = new Map<string, { result: MigrationResult; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function POST(req: Request) {
+  const startTime = Date.now();
+
+  try {
+    const body = await req.json();
+    const {
+      mode,
+      address,
+      network = 'mainnet',
+      code,
+      autoFix = true,
+    } = body;
+
+    // Validate mode
+    if (!mode || !['address', 'code'].includes(mode)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid mode. Use "address" or "code".' },
+        { status: 400 }
+      );
+    }
+
+    // Address mode: fetch from Etherscan
+    if (mode === 'address') {
+      if (!address) {
+        return NextResponse.json(
+          { success: false, error: 'Address is required for address mode.' },
+          { status: 400 }
+        );
+      }
+
+      // Validate address format
+      if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid Ethereum address format.' },
+          { status: 400 }
+        );
+      }
+
+      // Validate network
+      if (!['mainnet', 'sepolia'].includes(network)) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid network. Use "mainnet" or "sepolia".' },
+          { status: 400 }
+        );
+      }
+
+      // Check cache
+      const cacheKey = `${address}-${network}-${autoFix}`;
+      const cached = requestCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return NextResponse.json({
+          success: true,
+          ...cached.result,
+          cached: true,
+        });
+      }
+
+      try {
+        // Fetch contract source from Etherscan
+        const contractInfo = await fetchContractSource(
+          address,
+          network as NetworkType,
+          process.env.ETHERSCAN_API_KEY
+        );
+
+        // Analyze for migration
+        const result = analyzeForMigration(
+          contractInfo.sourceCode,
+          contractInfo,
+          autoFix
+        );
+
+        // Cache result
+        requestCache.set(cacheKey, { result, timestamp: Date.now() });
+
+        // Clean old cache entries
+        cleanCache();
+
+        return NextResponse.json({
+          success: true,
+          ...result,
+          metadata: {
+            ...result.metadata,
+            analysisTimeMs: Date.now() - startTime,
+          },
+        });
+      } catch (fetchError: any) {
+        // Handle specific Etherscan errors
+        if (fetchError.message.includes('not verified')) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Contract source code is not verified on Etherscan. Please paste the code directly.',
+              suggestion: 'Use "code" mode instead and paste the contract source code.',
+            },
+            { status: 400 }
+          );
+        }
+
+        if (fetchError.message.includes('rate limit')) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Etherscan API rate limit reached. Please try again in a few seconds.',
+            },
+            { status: 429 }
+          );
+        }
+
+        throw fetchError;
+      }
+    }
+
+    // Code mode: analyze provided code
+    if (mode === 'code') {
+      if (!code || typeof code !== 'string' || code.trim().length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Code is required for code mode.' },
+          { status: 400 }
+        );
+      }
+
+      // Validate it looks like Solidity code
+      if (!code.includes('pragma solidity') && !code.includes('contract ') && !code.includes('interface ')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Invalid Solidity code. Code must contain pragma, contract, or interface definitions.',
+          },
+          { status: 400 }
+        );
+      }
+
+      // Analyze the code
+      const result = analyzeForMigration(code, undefined, autoFix);
+
+      return NextResponse.json({
+        success: true,
+        ...result,
+        metadata: {
+          ...result.metadata,
+          analysisTimeMs: Date.now() - startTime,
+        },
+      });
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Invalid request.' },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    console.error('Migration API Error:', error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'An unexpected error occurred during migration analysis.',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    name: 'Contract Migration API',
+    version: '1.0.0',
+    description: 'Fetch and analyze Ethereum contracts for Monad compatibility',
+    endpoints: {
+      POST: {
+        description: 'Analyze a contract for migration',
+        modes: {
+          address: {
+            description: 'Fetch contract from Etherscan by address',
+            parameters: {
+              mode: '"address"',
+              address: 'Contract address (0x...)',
+              network: '"mainnet" | "sepolia" (default: mainnet)',
+              autoFix: 'boolean (default: true)',
+            },
+          },
+          code: {
+            description: 'Analyze provided Solidity code',
+            parameters: {
+              mode: '"code"',
+              code: 'Solidity source code string',
+              autoFix: 'boolean (default: true)',
+            },
+          },
+        },
+      },
+    },
+    compatibilityChecks: [
+      'SELFDESTRUCT usage (critical)',
+      'tx.origin authorization (high)',
+      'Unchecked external calls (high)',
+      'block.difficulty/prevrandao (medium)',
+      'Timestamp dependencies (medium)',
+      'Old Solidity versions (low)',
+      'Missing SPDX license (info)',
+      'Inline assembly (info)',
+      'Delegatecall usage (info)',
+    ],
+    autoFixes: [
+      'Add SPDX license identifier',
+      'Update pragma to ^0.8.24',
+      'Replace tx.origin with msg.sender',
+      'Replace block.difficulty with block.prevrandao',
+    ],
+  });
+}
+
+/**
+ * Clean expired cache entries
+ */
+function cleanCache() {
+  const now = Date.now();
+  for (const [key, value] of requestCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      requestCache.delete(key);
+    }
+  }
+}

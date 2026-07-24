@@ -9,8 +9,6 @@ import { NextResponse } from 'next/server';
 import {
   fetchContractSource,
   analyzeForMigration,
-  checkMonadCompatibility,
-  transformForMonad,
   NetworkType,
   MigrationResult,
 } from '@/lib/migrationTool';
@@ -105,9 +103,10 @@ export async function POST(req: Request) {
             analysisTimeMs: Date.now() - startTime,
           },
         });
-      } catch (fetchError: any) {
+      } catch (fetchError) {
+        const fetchMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
         // Handle specific Etherscan errors
-        if (fetchError.message.includes('not verified')) {
+        if (fetchMessage.includes('not verified')) {
           return NextResponse.json(
             {
               success: false,
@@ -118,7 +117,7 @@ export async function POST(req: Request) {
           );
         }
 
-        if (fetchError.message.includes('rate limit')) {
+        if (fetchMessage.includes('rate limit')) {
           return NextResponse.json(
             {
               success: false,
@@ -169,13 +168,14 @@ export async function POST(req: Request) {
       { success: false, error: 'Invalid request.' },
       { status: 400 }
     );
-  } catch (error: any) {
+  } catch (error) {
+          const message = error instanceof Error ? error.message : "Unexpected server error";
     console.error('Migration API Error:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'An unexpected error occurred during migration analysis.',
+        error: message || 'An unexpected error occurred during migration analysis.',
       },
       { status: 500 }
     );

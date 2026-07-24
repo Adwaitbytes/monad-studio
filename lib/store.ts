@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { CompilerDiagnostic } from './apiTypes';
 
 export type Theme = 'dark' | 'light';
 
@@ -114,10 +115,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 // IDE State
 interface CompileResult {
   success: boolean;
-  errors?: any[];
-  warnings?: any[];
+  errors?: CompilerDiagnostic[];
+  warnings?: CompilerDiagnostic[];
   bytecode?: string;
-  abi?: any;
+  abi?: unknown[];
 }
 
 interface IDEState {

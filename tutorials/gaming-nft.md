@@ -1,11 +1,11 @@
-# Creating Gaming NFTs on Somnia
+# Creating Gaming NFTs on Monad
 
 ## What You'll Build
 A high-performance NFT collection optimized for gaming assets with rarity tiers, batch minting, and metadata storage.
 
-## Why Somnia for Gaming NFTs?
+## Why Monad for Gaming NFTs?
 
-Somnia's **400,000+ TPS** enables:
+Monad's **10,000 TPS** enables:
 - ⚡ Instant minting during gameplay
 - 🎮 Real-time in-game asset creation
 - 💰 Negligible gas costs
@@ -98,14 +98,14 @@ const rarities = [...rarityLevels]; // 100 rarity values
 await nft.batchMint(recipients, uris, rarities);
 ```
 
-**Somnia advantage**: Batch 1000 NFTs in seconds, costs pennies!
+**Monad advantage**: Batch 1000 NFTs in seconds, costs pennies!
 
 ## Step 6: Deploy & Test
 
 1. Select "Gaming NFT Collection" template
 2. Customize name, symbol, max supply
 3. Run security analysis
-4. Deploy to Somnia Testnet
+4. Deploy to Monad Testnet
 5. Test minting in your game
 
 **Gas Cost**: ~2,500,000 gas (deployment)
@@ -133,10 +133,10 @@ public async Task<string> MintGameAsset(string playerAddress) {
 
 ### Unreal Engine Example
 ```cpp
-#include "Web3/SomniaWeb3.h"
+#include "Web3/MonadWeb3.h"
 
 void AMintNFT::MintAsset(FString PlayerAddress) {
-    USomniaWeb3* Web3 = USomniaWeb3::GetInstance();
+    UMonadWeb3* Web3 = UMonadWeb3::GetInstance();
     Web3->CallContractFunction(
         "0xYourNFTContract",
         "mint",

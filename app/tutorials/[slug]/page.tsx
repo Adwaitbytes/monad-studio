@@ -10,61 +10,44 @@ export default function TutorialPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadTutorial = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/tutorial?slug=${slug}`);
+        const data: { success: boolean; content?: string } = await res.json();
+        if (cancelled) return;
+        setContent(
+          data.success && data.content
+            ? data.content
+            : "# Tutorial Not Found\n\nThe requested tutorial could not be loaded."
+        );
+      } catch {
+        if (!cancelled) setContent("# Error\n\nFailed to load tutorial.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
     loadTutorial();
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
-  const loadTutorial = async () => {
-    try {
-      const res = await fetch(`/api/tutorial?slug=${slug}`);
-      const data = await res.json();
-      if (data.success) {
-        setContent(data.content);
-      } else {
-        setContent("# Tutorial Not Found\n\nThe requested tutorial could not be loaded.");
-      }
-    } catch (err) {
-      setContent("# Error\n\nFailed to load tutorial.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Tutorial markdown is repo-owned, but the inline formatter builds raw HTML —
+  // escape first so a stray angle bracket can never become live markup.
+  const escapeHtml = (text: string) =>
+    text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
 
-  // Simple markdown-to-HTML converter for basic formatting
-  const renderMarkdown = (md: string) => {
-    return md
-      .split('\n')
-      .map((line, i) => {
-        // Headers
-        if (line.startsWith('### ')) {
-          return <h3 key={i} className="text-xl font-bold mt-6 mb-3 text-purple-400">{line.slice(4)}</h3>;
-        }
-        if (line.startsWith('## ')) {
-          return <h2 key={i} className="text-2xl font-bold mt-8 mb-4 text-purple-300">{line.slice(3)}</h2>;
-        }
-        if (line.startsWith('# ')) {
-          return <h1 key={i} className="text-4xl font-bold mb-6 text-white">{line.slice(2)}</h1>;
-        }
-        
-        // Code blocks
-        if (line.startsWith('```')) {
-          return null; // Handle in separate pass
-        }
-        
-        // Bold
-        const boldProcessed = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
-        
-        // Inline code
-        const codeProcessed = boldProcessed.replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-sm font-mono">$1</code>');
-        
-        // Empty line
-        if (!line.trim()) {
-          return <br key={i} />;
-        }
-        
-        // Regular paragraph
-        return <p key={i} className="text-gray-300 leading-relaxed mb-3" dangerouslySetInnerHTML={{ __html: codeProcessed }} />;
-      });
-  };
+  const inlineFormat = (text: string) =>
+    escapeHtml(text)
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
+      .replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-300 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
 
   const processContent = () => {
     const lines = content.split('\n');
@@ -82,7 +65,12 @@ export default function TutorialPage() {
         } else {
           inCodeBlock = false;
           elements.push(
-            <pre key={`code-${i}`} className="bg-black/50 border border-white/10 rounded-lg p-4 overflow-x-auto my-4">
+            <pre key={`code-${i}`} className="relative bg-black/50 border border-white/10 rounded-lg p-4 overflow-x-auto my-4">
+              {codeBlockLang && (
+                <span className="absolute top-2 right-3 text-[10px] uppercase tracking-wider text-gray-500">
+                  {codeBlockLang}
+                </span>
+              )}
               <code className="text-sm font-mono text-gray-300">{codeBlockContent.join('\n')}</code>
             </pre>
           );
@@ -105,10 +93,7 @@ export default function TutorialPage() {
         elements.push(<h1 key={i} className="text-4xl font-bold mb-6 text-white">{line.slice(2)}</h1>);
       } else if (line.startsWith('- ') || line.startsWith('* ')) {
         // List items
-        const text = line.slice(2);
-        const processed = text
-          .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
-          .replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-300 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
+        const processed = inlineFormat(line.slice(2));
         elements.push(
           <li key={i} className="text-gray-300 ml-6 mb-2" dangerouslySetInnerHTML={{ __html: `• ${processed}` }} />
         );
@@ -116,9 +101,7 @@ export default function TutorialPage() {
         elements.push(<br key={i} />);
       } else {
         // Regular paragraph
-        const processed = line
-          .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
-          .replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-sm font-mono">$1</code>');
+        const processed = inlineFormat(line);
         elements.push(<p key={i} className="text-gray-300 leading-relaxed mb-3" dangerouslySetInnerHTML={{ __html: processed }} />);
       }
     });
@@ -145,7 +128,7 @@ export default function TutorialPage() {
       {/* Content */}
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12">
         <Link href="/" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-8 text-sm font-bold">
-          ← Back to SomniStudio
+          ← Back to MonadStudio
         </Link>
 
         <div className="bg-[#111] border border-white/5 rounded-3xl p-8 md:p-12">
@@ -154,7 +137,7 @@ export default function TutorialPage() {
 
         <div className="mt-8 text-center">
           <Link href="/" className="inline-block px-6 py-3 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-bold transition-all">
-            Try in SomniStudio
+            Try in MonadStudio
           </Link>
         </div>
       </div>

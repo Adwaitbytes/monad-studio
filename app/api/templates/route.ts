@@ -47,8 +47,8 @@ export async function GET(req: Request) {
             try {
                 const tutorialPath = path.join(process.cwd(), template.tutorial);
                 tutorial = fs.readFileSync(tutorialPath, "utf-8");
-            } catch (e) {
-                // Tutorial not found, skip
+            } catch {
+                // Tutorial not found — the template is still usable without it.
             }
 
             return NextResponse.json({
@@ -78,11 +78,12 @@ export async function GET(req: Request) {
 
         return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
-    } catch (error: any) {
+    } catch (error) {
+            const message = error instanceof Error ? error.message : "Unexpected server error";
         console.error("Templates API Error:", error);
         return NextResponse.json({ 
             success: false, 
-            error: error.message 
+            error: message 
         }, { status: 500 });
     }
 }

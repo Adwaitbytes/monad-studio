@@ -26,7 +26,7 @@ describe("GameAssetNFT", function () {
 
   describe("Minting", function () {
     it("Should mint NFT with correct parameters", async function () {
-      const { nft, owner, addr1 } = await loadFixture(deployNFTFixture);
+      const { nft, addr1 } = await loadFixture(deployNFTFixture);
       const mintPrice = await nft.mintPrice();
       
       await expect(nft.mint(addr1.address, "ipfs://test", 2, { value: mintPrice }))
@@ -56,7 +56,7 @@ describe("GameAssetNFT", function () {
 
   describe("Batch Minting", function () {
     it("Should batch mint multiple NFTs", async function () {
-      const { nft, owner, addr1, addr2 } = await loadFixture(deployNFTFixture);
+      const { nft, addr1, addr2 } = await loadFixture(deployNFTFixture);
       
       const recipients = [addr1.address, addr2.address];
       const uris = ["ipfs://test1", "ipfs://test2"];
@@ -87,7 +87,7 @@ describe("GameAssetNFT", function () {
 
   describe("Price Management", function () {
     it("Should allow owner to update mint price", async function () {
-      const { nft, owner } = await loadFixture(deployNFTFixture);
+      const { nft } = await loadFixture(deployNFTFixture);
       const newPrice = ethers.parseEther("0.02");
       
       await expect(nft.setMintPrice(newPrice))
@@ -113,7 +113,6 @@ describe("GameAssetNFT", function () {
       // Mint to accumulate funds
       await nft.connect(addr1).mint(addr1.address, "ipfs://test", 1, { value: mintPrice });
       
-      const contractBalance = await ethers.provider.getBalance(nft.target);
       const ownerBalanceBefore = await ethers.provider.getBalance(owner.address);
       
       await nft.withdraw();
@@ -125,7 +124,7 @@ describe("GameAssetNFT", function () {
 
   describe("Max Supply", function () {
     it("Should enforce max supply limit", async function () {
-      const { nft, owner } = await loadFixture(deployNFTFixture);
+      const { nft } = await loadFixture(deployNFTFixture);
       const maxSupply = await nft.MAX_SUPPLY();
       
       // This is a gas-intensive test, so we'll just check the logic

@@ -80,9 +80,11 @@ npm install
 Create a `.env.local` file with your configuration:
 
 ```env
-# AI provider (at least one required for AI features)
-GROQ_API_KEY=your_groq_api_key
+# AI provider — at least one is needed for generate/audit/explain/research.
+# Compile, deploy and transfer work without any of these.
 OPENAI_API_KEY=your_openai_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+GROQ_API_KEY=your_groq_api_key
 
 # Optional: Analytics
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url

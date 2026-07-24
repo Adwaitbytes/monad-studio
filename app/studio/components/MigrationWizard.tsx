@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { DiffViewer } from './DiffViewer';
+import type { CodeChange } from '@/lib/migrationTool';
 
 type WizardStep = 'input' | 'analyzing' | 'results' | 'diff';
 type InputMode = 'address' | 'code';
@@ -38,14 +39,7 @@ interface MigrationResult {
   migration: {
     originalCode: string;
     migratedCode: string;
-    changes: Array<{
-      type: string;
-      line: number;
-      original: string;
-      replacement: string;
-      reason: string;
-      autoFixed: boolean;
-    }>;
+    changes: CodeChange[];
     autoFixedCount: number;
     manualFixCount: number;
   };
@@ -146,8 +140,8 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
 
       setResult(data);
       setStep('results');
-    } catch (err: any) {
-      setError(err.message || 'Failed to analyze contract');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze contract');
       setStep('input');
     } finally {
       setLoading(false);
@@ -573,7 +567,7 @@ contract MyContract {
             <DiffViewer
               original={result.migration.originalCode}
               modified={result.migration.migratedCode}
-              changes={result.migration.changes as any}
+              changes={result.migration.changes}
               isDark={true}
             />
           </div>

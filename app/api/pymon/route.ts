@@ -2,11 +2,6 @@
 // PyMon API Route - Python to EVM Transpiler Integration for MonadStudio
 
 import { NextResponse } from "next/server";
-import { spawn } from "child_process";
-import * as path from "path";
-
-// PyMon Python Service URL (when running as separate service)
-const PYMON_SERVICE_URL = process.env.PYMON_SERVICE_URL || "http://localhost:5001";
 
 // Monad Network Configuration
 const MONAD_CONFIG = {
@@ -238,10 +233,23 @@ class NFTCollection(PySmartContract):
 // ============= INLINE PYTHON TRANSPILER =============
 // This is a TypeScript implementation of the Python transpiler for direct use
 
+interface AbiInput {
+    name: string;
+    type: string;
+}
+
+interface AbiEntry {
+    type: string;
+    name?: string;
+    inputs?: AbiInput[];
+    outputs?: AbiInput[];
+    stateMutability?: string;
+}
+
 interface StateVariable {
     name: string;
     type: string;
-    initialValue: any;
+    initialValue: string | number | boolean | null;
     slot: number;
     isMapping: boolean;
     keyType?: string;
@@ -268,7 +276,6 @@ interface ContractAnalysis {
 
 // Simple Python parser for contract structure
 function parsePythonContract(code: string): ContractAnalysis | null {
-    const lines = code.split('\n');
     let contractName = '';
     const stateVars: StateVariable[] = [];
     const functions: FunctionDef[] = [];
@@ -444,7 +451,7 @@ function generateSolidity(analysis: ContractAnalysis): string {
     return lines.join('\n');
 }
 
-function formatInitialValue(value: any, type: string): string {
+function formatInitialValue(value: string | number | boolean | null | undefined, type: string): string {
     if (value === null || value === undefined) return '0';
 
     const valueStr = String(value).trim();
@@ -464,8 +471,8 @@ function formatInitialValue(value: any, type: string): string {
     return valueStr;
 }
 
-function generateABI(analysis: ContractAnalysis): any[] {
-    const abi: any[] = [];
+function generateABI(analysis: ContractAnalysis): AbiEntry[] {
+    const abi: AbiEntry[] = [];
 
     // Constructor
     abi.push({
@@ -751,11 +758,12 @@ export async function POST(req: Request) {
                 }, { status: 400 });
         }
 
-    } catch (error: any) {
+    } catch (error) {
+            const message = error instanceof Error ? error.message : "Unexpected server error";
         console.error('❌ PyMon API Error:', error);
         return NextResponse.json({
             success: false,
-            error: error.message || 'Internal server error'
+            error: message || 'Internal server error'
         }, { status: 500 });
     }
 }

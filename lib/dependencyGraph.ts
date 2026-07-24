@@ -6,7 +6,7 @@
  */
 
 import type { Node, Edge, MarkerType } from 'reactflow';
-import type { ParallelAnalysisResult, FunctionAnalysis, StateConflict } from './parallelAnalyzer';
+import type { ParallelAnalysisResult } from './parallelAnalyzer';
 
 // Node types for the graph
 export type NodeType = 'function' | 'storage' | 'conflict' | 'summary';
@@ -56,7 +56,6 @@ export function createFlowGraph(analysis: ParallelAnalysisResult): {
   const FUNCTION_X = 100;
   const STORAGE_X = 500;
   const NODE_SPACING_Y = 120;
-  const CONFLICT_X = 300;
 
   // Create function nodes
   analysis.functions.forEach((func, index) => {
@@ -182,7 +181,7 @@ export function createFlowGraph(analysis: ParallelAnalysisResult): {
   });
 
   // Create conflict edges between functions
-  analysis.conflicts.forEach((conflict, index) => {
+  analysis.conflicts.forEach((conflict) => {
     if (conflict.functions.length >= 2) {
       for (let i = 0; i < conflict.functions.length - 1; i++) {
         for (let j = i + 1; j < conflict.functions.length; j++) {
@@ -248,7 +247,7 @@ export function getGraphStats(analysis: ParallelAnalysisResult) {
  */
 export function applyHierarchicalLayout(
   nodes: Node<GraphNodeData>[],
-  edges: Edge[]
+  _edges: Edge[]
 ): Node<GraphNodeData>[] {
   const functionNodes = nodes.filter(n => n.data.type === 'function');
   const storageNodes = nodes.filter(n => n.data.type === 'storage');

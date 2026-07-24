@@ -94,7 +94,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
         </div>
         <h3 className="text-lg font-semibold text-white mb-2">Excellent Optimization!</h3>
         <p className="text-gray-400 max-w-md">
-          Your contract is well-optimized for Monad's parallel execution.
+          Your contract is well-optimized for Monad&apos;s parallel execution.
           No immediate improvements needed.
         </p>
       </div>

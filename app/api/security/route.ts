@@ -187,6 +187,11 @@ export async function POST(req: Request) {
     }, 0);
     
     const riskLevel = riskScore > 20 ? "High Risk" : riskScore > 10 ? "Medium Risk" : riskScore > 5 ? "Low Risk" : "Minimal Risk";
+
+    // Clients display a 0-100 "higher is safer" score. Derive it here so the two
+    // representations can never drift apart, and clamp it so a heavily flawed
+    // contract reports 0 rather than a negative score.
+    const securityScore = Math.max(0, Math.min(100, 100 - riskScore));
     
     // Count by severity
     const criticalCount = issues.filter(i => i.severity === "critical").length;
@@ -211,6 +216,7 @@ export async function POST(req: Request) {
       analysis: {
         riskLevel,
         riskScore,
+        securityScore,
         deploymentRecommendation,
         summary: {
           critical: criticalCount,
@@ -225,10 +231,10 @@ export async function POST(req: Request) {
       }
     });
     
-  } catch (error: any) {
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+  } catch (error) {
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : "Security analysis failed"
     }, { status: 500 });
   }
 }

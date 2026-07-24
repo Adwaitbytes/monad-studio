@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -14,17 +14,12 @@ import {
   FileCode,
   FolderOpen,
   Plus,
-  Save,
-  Settings,
   ChevronRight,
   ChevronDown,
   X,
-  AlertCircle,
   CheckCircle2,
   Loader2,
   Sparkles,
-  BookOpen,
-  MessageSquare,
   Lightbulb,
   Zap,
   Bug,
@@ -34,9 +29,8 @@ import {
   ExternalLink,
   ArrowLeft,
   Trash2,
-  Edit3,
   Coins,
-  Image,
+  Image as ImageIcon,
   Users,
   Landmark,
   Hammer,
@@ -46,21 +40,34 @@ import {
   Layers,
   Database,
   Lock,
-  Workflow,
   Send,
-  HelpCircle,
-  ArrowRight,
   ArrowRightLeft,
   Gift,
   Gauge,
 } from "lucide-react";
 import Link from "next/link";
 import { useThemeStore, useUserStore, useProjectStore, useIDEStore } from "@/lib/store";
+import { useHydrated } from "@/lib/useHydrated";
+import type { QuickActionType } from "@/lib/supabase";
 import { ParallelProfiler } from "./components/ParallelProfiler";
 import { MigrationWizard } from "./components/MigrationWizard";
 import { generateFromTemplate, ARCHITECT_TO_TEMPLATE, CONTRACT_TEMPLATES } from "@/lib/contractTemplates";
 import { analytics } from "@/lib/supabase";
 import { createPaymentHeader } from "@/utils/q402";
+import { getEthereumProvider } from "@/lib/ethereum";
+import {
+  errorMessage,
+  type AgentTextResponse,
+  type CompileResponse,
+  type CompilerDiagnostic,
+  type DeployResponse,
+  type ExplainErrorResponse,
+  type PaymentChallenge,
+  type PymonAuditResponse,
+  type SecurityAuditResponse,
+  type TeachModeContent,
+  type TranspileResponse,
+} from "@/lib/apiTypes";
 
 // Dynamically import Monaco to avoid SSR issues
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
@@ -714,7 +721,7 @@ const ARCHITECT_CONTRACT_TYPES = [
   {
     id: "nft-collection",
     name: "NFT Collection",
-    icon: Image,
+    icon: ImageIcon,
     color: "from-pink-500 to-purple-500",
     description: "ERC721 with reveal & royalties",
     features: ["Lazy Mint", "Reveal", "Royalties", "Whitelist"],
@@ -835,7 +842,7 @@ const MONAD_KNOWLEDGE = {
 export default function StudioPage() {
   const { theme, toggleTheme } = useThemeStore();
   const { walletAddress, isConnected, network, setUser, disconnect, setNetwork } = useUserStore();
-  const { files, activeFileId, updateFileContent, setActiveFile, addFile, removeFile } = useProjectStore();
+  const { setActiveFile, addFile } = useProjectStore();
   const { 
     isCompiling, 
     isDeploying, 
@@ -850,19 +857,17 @@ export default function StudioPage() {
     addConsoleOutput,
     clearConsole,
     toggleTerminal,
-    toggleSidebar,
     toggleAIPanel
   } = useIDEStore();
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [code, setCode] = useState(DEFAULT_CONTRACT);
   const [currentFileName, setCurrentFileName] = useState("MyToken.sol");
   const [language, setLanguage] = useState<"solidity" | "python">("solidity");
   const [transpilledSolidity, setTranspiledSolidity] = useState<string | null>(null);
-  const [aiPrompt, setAIPrompt] = useState("");
   const [aiResponse, setAIResponse] = useState<string | null>(null);
   const [aiLoading, setAILoading] = useState(false);
-  const [teachModeContent, setTeachModeContent] = useState<any>(null);
+  const [teachModeContent, setTeachModeContent] = useState<TeachModeContent | null>(null);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [deployedAddress, setDeployedAddress] = useState<string | null>(null);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
@@ -892,29 +897,54 @@ export default function StudioPage() {
 
   const isDark = theme === "dark";
 
+  /**
+   * The AI assistant, profiler and migration wizard all dock to the right of the
+   * editor. Showing two at once leaves no room for the code, so opening one
+   * closes the others; clicking the active one closes it.
+   */
+  const showAIPanel = () => {
+    if (!aiPanelOpen) toggleAIPanel();
+    setParallelProfilerOpen(false);
+    setMigrationOpen(false);
+  };
+
+  const openSidePanel = (panel: "ai" | "profiler" | "migration") => {
+    const aiNext = panel === "ai" ? !aiPanelOpen : false;
+    const profilerNext = panel === "profiler" ? !parallelProfilerOpen : false;
+    const migrationNext = panel === "migration" ? !migrationOpen : false;
+
+    if (aiNext !== aiPanelOpen) toggleAIPanel();
+    setParallelProfilerOpen(profilerNext);
+    setMigrationOpen(migrationNext);
+  };
+
+  // Seed the workspace with a starter file on first mount. `files` is read
+  // through the store's getState so re-adding is not retriggered by its own write.
   useEffect(() => {
-    setMounted(true);
-    // Initialize with a default file
-    if (files.length === 0) {
-      addFile({
-        id: "main",
-        path: "contracts/MyToken.sol",
-        content: DEFAULT_CONTRACT,
-        language: "solidity",
-        isModified: false,
-      });
-      setActiveFile("main");
-    }
-  }, []);
+    if (useProjectStore.getState().files.length > 0) return;
+    addFile({
+      id: "main",
+      path: "contracts/MyToken.sol",
+      content: DEFAULT_CONTRACT,
+      language: "solidity",
+      isModified: false,
+    });
+    setActiveFile("main");
+  }, [addFile, setActiveFile]);
 
   // Connect wallet
   const connectWallet = async () => {
-    if (typeof window !== "undefined" && (window as any).ethereum) {
+    const ethereum = getEthereumProvider();
+    if (ethereum) {
       try {
-        const accounts = await (window as any).ethereum.request({
+        const accounts = await ethereum.request<string[]>({
           method: "eth_requestAccounts",
         });
-        const address = accounts[0];
+        const address = accounts?.[0];
+        if (!address) {
+          addConsoleOutput("❌ No account returned by the wallet");
+          return;
+        }
         setUser({ walletAddress: address });
         addConsoleOutput(`✅ Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`);
         
@@ -933,20 +963,24 @@ export default function StudioPage() {
         } else {
           console.warn('⚠️ Failed to get user UUID');
         }
-      } catch (err: any) {
-        addConsoleOutput(`❌ Wallet connection failed: ${err.message}`);
+      } catch (err) {
+        addConsoleOutput(`❌ Wallet connection failed: ${errorMessage(err)}`);
       }
     } else {
       addConsoleOutput("❌ Please install MetaMask");
     }
   };
 
-  // Compile contract
-  const handleCompile = async () => {
+  // Compile contract.
+  // `sourceOverride` lets the architect compile code it just generated: reading
+  // `code` here would return the pre-update value until React re-renders.
+  const handleCompile = async (sourceOverride?: string) => {
     if (!isConnected) {
       addConsoleOutput("⚠️ Please connect wallet first");
       return;
     }
+
+    const source = sourceOverride ?? code;
 
     setCompiling(true);
     clearConsole();
@@ -964,20 +998,30 @@ export default function StudioPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "compile",
-            code,
+            code: source,
           }),
         });
 
-        const transpileResult = await transpileRes.json();
+        const transpileResult: TranspileResponse = await transpileRes.json();
 
         if (!transpileResult.success) {
           addConsoleOutput(`❌ Transpilation failed: ${transpileResult.error}`);
-          setCompileResult({ success: false, errors: [{ message: transpileResult.error }] });
+          setCompileResult({
+            success: false,
+            errors: [{ message: transpileResult.error ?? "Transpilation failed" }],
+          });
           setCompiling(false);
           return;
         }
 
-        addConsoleOutput(`✅ Transpiled to Solidity: ${transpileResult.contractName}`);
+        if (!transpileResult.solidityCode) {
+          addConsoleOutput("❌ Transpiler returned no Solidity output");
+          setCompileResult({ success: false, errors: [{ message: "Transpiler returned no Solidity output" }] });
+          setCompiling(false);
+          return;
+        }
+
+        addConsoleOutput(`✅ Transpiled to Solidity: ${transpileResult.contractName ?? "contract"}`);
         setTranspiledSolidity(transpileResult.solidityCode);
 
         // Now compile the Solidity code
@@ -995,7 +1039,7 @@ export default function StudioPage() {
 
         // Handle payment if required
         if (res.status === 402) {
-          const data = await res.json();
+          const data: PaymentChallenge = await res.json();
           addConsoleOutput("💳 Signature required for compilation...");
           const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
 
@@ -1013,7 +1057,7 @@ export default function StudioPage() {
           });
         }
 
-        const result = await res.json();
+        const result: CompileResponse = await res.json();
         const compileTime = Date.now() - startTime;
 
         if (result.success) {
@@ -1028,9 +1072,9 @@ export default function StudioPage() {
           addConsoleOutput(`❌ Compilation failed`);
           setCompileResult({ success: false, errors: result.errors });
         }
-      } catch (err: any) {
-        addConsoleOutput(`❌ Error: ${err.message}`);
-        setCompileResult({ success: false, errors: [{ message: err.message }] });
+      } catch (err) {
+        addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
+        setCompileResult({ success: false, errors: [{ message: errorMessage(err) }] });
       }
 
       setCompiling(false);
@@ -1047,13 +1091,13 @@ export default function StudioPage() {
         body: JSON.stringify({
           action: "compile",
           userAddress: walletAddress,
-          code,
+          code: source,
         }),
       });
 
       // Handle payment if required
       if (res.status === 402) {
-        const data = await res.json();
+        const data: PaymentChallenge = await res.json();
         addConsoleOutput("💳 Signature required for compilation...");
         const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
         
@@ -1066,12 +1110,12 @@ export default function StudioPage() {
           body: JSON.stringify({
             action: "compile",
             userAddress: walletAddress,
-            code,
+            code: source,
           }),
         });
       }
 
-      const result = await res.json();
+      const result: CompileResponse = await res.json();
       const compileTime = Date.now() - startTime;
 
       if (result.success) {
@@ -1088,7 +1132,7 @@ export default function StudioPage() {
           analytics.trackCompilation({
             userId: userUUID,
             status: "success",
-            sourceCode: code,
+            sourceCode: source,
             compileTimeMs: compileTime,
           });
           console.log('✅ Compilation tracked (success)');
@@ -1096,8 +1140,8 @@ export default function StudioPage() {
       } else {
         addConsoleOutput(`❌ Compilation failed`);
         if (result.errors) {
-          result.errors.forEach((err: any) => {
-            addConsoleOutput(`   Line ${err.line || "?"}: ${err.message}`);
+          result.errors.forEach((err) => {
+            addConsoleOutput(`   ${err.message}`);
           });
         }
         setCompileResult({
@@ -1106,7 +1150,7 @@ export default function StudioPage() {
         });
 
         // Generate AI explanation for errors
-        if (result.errors?.length > 0) {
+        if (result.errors && result.errors.length > 0) {
           await generateErrorExplanation(result.errors);
         }
 
@@ -1115,23 +1159,23 @@ export default function StudioPage() {
           analytics.trackCompilation({
             userId: userUUID,
             status: "error",
-            sourceCode: code,
+            sourceCode: source,
             errors: result.errors,
             compileTimeMs: compileTime,
           });
           console.log('✅ Compilation tracked (error)');
         }
       }
-    } catch (err: any) {
-      addConsoleOutput(`❌ Error: ${err.message}`);
-      setCompileResult({ success: false, errors: [{ message: err.message }] });
+    } catch (err) {
+      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
+      setCompileResult({ success: false, errors: [{ message: errorMessage(err) }] });
     } finally {
       setCompiling(false);
     }
   };
 
   // Generate AI explanation for errors
-  const generateErrorExplanation = async (errors: any[]) => {
+  const generateErrorExplanation = async (errors: CompilerDiagnostic[]) => {
     setAILoading(true);
     try {
       const res = await fetch("/api/agent", {
@@ -1145,11 +1189,11 @@ export default function StudioPage() {
         }),
       });
 
-      const data = await res.json();
-      if (data.success) {
+      const data: ExplainErrorResponse = await res.json();
+      if (data.success && data.explanation) {
         setAIResponse(data.explanation);
-        setTeachModeContent(data.teachMode);
-        toggleAIPanel();
+        setTeachModeContent(data.teachMode ?? null);
+        showAIPanel();
       }
     } catch (err) {
       console.error("Failed to get AI explanation:", err);
@@ -1185,7 +1229,7 @@ export default function StudioPage() {
       });
 
       if (res.status === 402) {
-        const data = await res.json();
+        const data: PaymentChallenge = await res.json();
         addConsoleOutput("💳 Signature required for deployment...");
         const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
 
@@ -1204,22 +1248,23 @@ export default function StudioPage() {
         });
       }
 
-      const result = await res.json();
+      const result: DeployResponse = await res.json();
 
-      if (result.success) {
+      if (result.success && result.address && result.txHash) {
+        const { address, txHash } = result;
         addConsoleOutput(`✅ Contract deployed!`);
-        addConsoleOutput(`📍 Address: ${result.address}`);
-        addConsoleOutput(`🔗 TX: ${result.txHash}`);
-        setDeployedAddress(result.address);
+        addConsoleOutput(`📍 Address: ${address}`);
+        addConsoleOutput(`🔗 TX: ${txHash}`);
+        setDeployedAddress(address);
         setShowDeployModal(true);
 
         // Track deployment
         if (userUUID) {
           analytics.trackDeployment({
             userId: userUUID,
-            contractAddress: result.address,
+            contractAddress: address,
             network: network as "testnet" | "mainnet",
-            transactionHash: result.txHash,
+            transactionHash: txHash,
             deployerAddress: walletAddress!,
           });
           console.log('✅ Deployment tracked');
@@ -1227,8 +1272,8 @@ export default function StudioPage() {
       } else {
         addConsoleOutput(`❌ Deployment failed: ${result.error}`);
       }
-    } catch (err: any) {
-      addConsoleOutput(`❌ Error: ${err.message}`);
+    } catch (err) {
+      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
     } finally {
       setDeploying(false);
     }
@@ -1271,14 +1316,14 @@ export default function StudioPage() {
         }),
       });
 
-      const result = await res.json();
+      const result: PymonAuditResponse = await res.json();
 
       if (result.success) {
         addConsoleOutput(`📊 Security Score: ${result.score}/100 (${result.riskLevel})`);
         addConsoleOutput(`📋 Found ${result.findings?.length || 0} issues`);
 
         if (result.findings && result.findings.length > 0) {
-          result.findings.forEach((f: any) => {
+          result.findings.forEach((f) => {
             const icon = f.severity === 'critical' ? '🔴' :
               f.severity === 'high' ? '🟠' :
                 f.severity === 'medium' ? '🟡' : '🟢';
@@ -1295,72 +1340,8 @@ export default function StudioPage() {
       } else {
         addConsoleOutput(`❌ Audit failed: ${result.error}`);
       }
-    } catch (err: any) {
-      addConsoleOutput(`❌ Error: ${err.message}`);
-    }
-  };
-
-  // AI Generate
-  const handleAIGenerate = async () => {
-    if (!aiPrompt.trim()) return;
-    
-    setAILoading(true);
-    addConsoleOutput(`🤖 Generating: "${aiPrompt.slice(0, 50)}..."`);
-
-    try {
-      let res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate",
-          userAddress: walletAddress || "anonymous",
-          prompt: aiPrompt,
-        }),
-      });
-
-      if (res.status === 402) {
-        const data = await res.json();
-        const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
-        
-        res = await fetch("/api/agent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-PAYMENT": xPaymentHeader,
-          },
-          body: JSON.stringify({
-            action: "generate",
-            userAddress: walletAddress || "anonymous",
-            prompt: aiPrompt,
-          }),
-        });
-      }
-
-      const result = await res.json();
-
-      if (result.success) {
-        setCode(result.code);
-        addConsoleOutput(`✅ Contract generated successfully`);
-        setAIResponse("Contract generated! Review the code and compile when ready.");
-        
-        // Track AI usage
-        if (userUUID) {
-          analytics.trackAIPrompt({
-            userId: userUUID,
-            promptType: "generate",
-            promptText: aiPrompt,
-            responseText: result.code,
-          });
-          console.log('✅ AI prompt tracked (generate)');
-        }
-      } else {
-        addConsoleOutput(`❌ Generation failed: ${result.error}`);
-      }
-    } catch (err: any) {
-      addConsoleOutput(`❌ Error: ${err.message}`);
-    } finally {
-      setAILoading(false);
-      setAIPrompt("");
+    } catch (err) {
+      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
     }
   };
 
@@ -1376,34 +1357,39 @@ export default function StudioPage() {
         body: JSON.stringify({ code }),
       });
 
-      const result = await res.json();
+      const result: SecurityAuditResponse = await res.json();
 
-      if (result.success) {
-        const { riskLevel, issues, score } = result.analysis;
-        addConsoleOutput(`🛡️ Security Score: ${100 - score}/100`);
-        addConsoleOutput(`⚠️ Risk Level: ${riskLevel.toUpperCase()}`);
-        addConsoleOutput(`📋 Issues found: ${issues.length}`);
-        
-        setAIResponse(`## Security Audit Report\n\n**Risk Level:** ${riskLevel}\n**Score:** ${100 - score}/100\n\n### Issues Found:\n${
-          issues.map((i: any) => `- **${i.severity}**: ${i.title}\n  ${i.description}`).join("\n\n")
-        }`);
-        
-        if (!aiPanelOpen) toggleAIPanel();
-
-        // Track audit
-        if (userUUID) {
-          analytics.trackSecurityAudit({
-            userId: userUUID,
-            sourceCode: code,
-            riskScore: score,
-            riskLevel,
-            issues,
-          });
-          console.log('✅ Security audit tracked');
-        }
+      if (!result.success || !result.analysis) {
+        addConsoleOutput(`❌ Audit failed: ${result.error ?? "Unknown error"}`);
+        return;
       }
-    } catch (err: any) {
-      addConsoleOutput(`❌ Audit failed: ${err.message}`);
+
+      const { riskLevel, issues, riskScore, securityScore, deploymentRecommendation } = result.analysis;
+      addConsoleOutput(`🛡️ Security Score: ${securityScore}/100`);
+      addConsoleOutput(`⚠️ Risk Level: ${riskLevel.toUpperCase()}`);
+      addConsoleOutput(`📋 Issues found: ${issues.length}`);
+
+      setAIResponse(`## Security Audit Report\n\n**Risk Level:** ${riskLevel}\n**Score:** ${securityScore}/100\n\n${deploymentRecommendation}\n\n### Issues Found:\n${
+        issues.length
+          ? issues.map((i) => `- **${i.severity}**: ${i.title}\n  ${i.description}`).join("\n\n")
+          : "_No issues detected._"
+      }`);
+
+      showAIPanel();
+
+      // Track audit
+      if (userUUID) {
+        analytics.trackSecurityAudit({
+          userId: userUUID,
+          sourceCode: code,
+          riskScore,
+          riskLevel,
+          issues,
+        });
+        console.log('✅ Security audit tracked');
+      }
+    } catch (err) {
+      addConsoleOutput(`❌ Audit failed: ${errorMessage(err)}`);
     } finally {
       setAILoading(false);
     }
@@ -1514,16 +1500,16 @@ contract ${fileName.replace('.sol', '')} {
   };
 
   // ============= QUICK ACTIONS =============
-  const handleQuickAction = async (action: string) => {
+  const handleQuickAction = async (action: QuickActionType) => {
     if (!code.trim()) {
       addConsoleOutput("⚠️ No code to analyze");
       return;
     }
 
     setAILoading(true);
-    if (!aiPanelOpen) toggleAIPanel();
+    showAIPanel();
 
-    const prompts: Record<string, string> = {
+    const prompts: Record<QuickActionType, string> = {
       explain: `Explain this Solidity contract in simple terms. What does it do? What are the main functions? 
 
 CONTRACT:
@@ -1583,7 +1569,7 @@ Look for:
         }),
       });
 
-      const result = await res.json();
+      const result: AgentTextResponse = await res.json();
 
       if (result.success) {
         const response = result.answer || result.response || "Analysis complete";
@@ -1591,14 +1577,12 @@ Look for:
         addConsoleOutput(`✅ ${action.charAt(0).toUpperCase() + action.slice(1)} analysis complete`);
         
         // Ensure AI panel is visible
-        if (!aiPanelOpen) {
-          toggleAIPanel();
-        }
+        showAIPanel();
         
         if (userUUID) {
           analytics.trackAIPrompt({
             userId: userUUID,
-            promptType: action as any,
+            promptType: action,
             promptText: prompts[action],
             responseText: response,
           });
@@ -1608,17 +1592,13 @@ Look for:
         const errorMsg = result.error || "Unknown error";
         setAIResponse(`❌ Analysis failed: ${errorMsg}`);
         addConsoleOutput(`❌ Analysis failed: ${errorMsg}`);
-        if (!aiPanelOpen) {
-          toggleAIPanel();
-        }
+        showAIPanel();
       }
-    } catch (err: any) {
-      const errorMsg = err.message || "Request failed";
+    } catch (err) {
+      const errorMsg = errorMessage(err) || "Request failed";
       setAIResponse(`❌ Error: ${errorMsg}`);
       addConsoleOutput(`❌ Error: ${errorMsg}`);
-      if (!aiPanelOpen) {
-        toggleAIPanel();
-      }
+      showAIPanel();
     } finally {
       setAILoading(false);
     }
@@ -1762,7 +1742,7 @@ NO markdown, NO explanations, NO code blocks.`;
           }),
         });
 
-        const result = await res.json();
+        const result: AgentTextResponse = await res.json();
 
         if (!result.success || !result.code) {
           throw new Error(result.error || "AI generation failed");
@@ -1808,11 +1788,14 @@ NO markdown, NO explanations, NO code blocks.`;
       addConsoleOutput(`✅ ${contractType.name} contract generated successfully!`);
       addConsoleOutput(`📄 File: ${fileName}`);
 
-      // Auto-compile to verify
-      addConsoleOutput(`🔄 Auto-compiling to verify...`);
-      setTimeout(() => {
-        handleCompile();
-      }, 500);
+      // Auto-compile the code we just produced. Passing it explicitly avoids
+      // compiling the previous contract from a stale closure.
+      if (isConnected) {
+        addConsoleOutput(`🔄 Auto-compiling to verify...`);
+        await handleCompile(generatedCode);
+      } else {
+        addConsoleOutput(`💡 Connect a wallet to compile and deploy this contract.`);
+      }
 
       // Track in analytics
       if (userUUID) {
@@ -1824,8 +1807,8 @@ NO markdown, NO explanations, NO code blocks.`;
         });
       }
 
-    } catch (err: any) {
-      addConsoleOutput(`❌ Error: ${err.message}`);
+    } catch (err) {
+      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
     } finally {
       setArchitectGenerating(false);
     }
@@ -1884,7 +1867,7 @@ NO markdown, NO explanations, NO code blocks, JUST THE CODE.`;
         }),
       });
 
-      const result = await res.json();
+      const result: AgentTextResponse = await res.json();
 
       if (!result.success || !result.code) {
         throw new Error(result.error || "Generation failed");
@@ -1931,17 +1914,20 @@ NO markdown, NO explanations, NO code blocks, JUST THE CODE.`;
       // Add assistant response to chat
       setArchitectChatHistory(prev => [...prev, {
         role: "assistant",
-        content: `✅ Generated **${contractName}** contract!\n\n📄 File: ${fileName}\n🔄 Auto-compiling to verify...`
+        content: `✅ Generated **${contractName}** contract!\n\n📄 File: ${fileName}${isConnected ? "\n🔄 Auto-compiling to verify..." : "\n💡 Connect a wallet to compile it."}`
       }]);
 
       addConsoleOutput(`✅ ${contractName} contract generated!`);
       addConsoleOutput(`📄 File: ${fileName}`);
 
-      // Auto-compile
-      addConsoleOutput(`🔄 Auto-compiling to verify...`);
-      setTimeout(() => {
-        handleCompile();
-      }, 500);
+      // Auto-compile the code we just produced. Passing it explicitly avoids
+      // compiling the previous contract from a stale closure.
+      if (isConnected) {
+        addConsoleOutput(`🔄 Auto-compiling to verify...`);
+        await handleCompile(generatedCode);
+      } else {
+        addConsoleOutput(`💡 Connect a wallet to compile and deploy this contract.`);
+      }
 
       // Track analytics
       if (userUUID) {
@@ -1953,12 +1939,12 @@ NO markdown, NO explanations, NO code blocks, JUST THE CODE.`;
         });
       }
 
-    } catch (err: any) {
+    } catch (err) {
       setArchitectChatHistory(prev => [...prev, {
         role: "assistant",
-        content: `❌ Error: ${err.message}\n\nPlease try again with more specific requirements.`
+        content: `❌ Error: ${errorMessage(err)}\n\nPlease try again with more specific requirements.`
       }]);
-      addConsoleOutput(`❌ Error: ${err.message}`);
+      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
     } finally {
       setArchitectGenerating(false);
     }
@@ -2005,7 +1991,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
         }),
       });
 
-      const result = await res.json();
+      const result: AgentTextResponse = await res.json();
 
       if (result.success) {
         const answer = result.answer || result.response || "I couldn't find specific information about that.";
@@ -2025,10 +2011,10 @@ Be concise but thorough. Format your response with markdown for readability.`;
           content: `❌ Error: ${result.error || "Failed to get response"}`
         }]);
       }
-    } catch (err: any) {
+    } catch (err) {
       setResearchHistory(prev => [...prev, {
         role: "assistant",
-        content: `❌ Error: ${err.message}`
+        content: `❌ Error: ${errorMessage(err)}`
       }]);
     } finally {
       setResearchLoading(false);
@@ -2094,7 +2080,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
         {/* Center - Actions */}
         <div className="flex items-center gap-2">
           <motion.button
-            onClick={handleCompile}
+            onClick={() => handleCompile()}
             disabled={isCompiling}
             className={`px-4 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
               isCompiling
@@ -2169,7 +2155,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
 
           {/* AI Panel Toggle */}
           <motion.button
-            onClick={toggleAIPanel}
+            onClick={() => openSidePanel("ai")}
             className={`p-2 rounded-lg ${aiPanelOpen ? "bg-purple-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
             whileTap={{ scale: 0.95 }}
             title="AI Assistant"
@@ -2179,7 +2165,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
 
           {/* Parallel Profiler Toggle */}
           <motion.button
-            onClick={() => setParallelProfilerOpen(!parallelProfilerOpen)}
+            onClick={() => openSidePanel("profiler")}
             className={`p-2 rounded-lg ${parallelProfilerOpen ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
             whileTap={{ scale: 0.95 }}
             title="Parallel Execution Profiler"
@@ -2189,7 +2175,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
 
           {/* Migration Tool Toggle */}
           <motion.button
-            onClick={() => setMigrationOpen(!migrationOpen)}
+            onClick={() => openSidePanel("migration")}
             className={`p-2 rounded-lg ${migrationOpen ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
             whileTap={{ scale: 0.95 }}
             title="Contract Migration (ETH → Monad)"
@@ -2307,7 +2293,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
                   <div className="space-y-1">
                     {[
                       { key: "erc20", icon: <Coins size={14} className="text-yellow-400" />, name: "ERC20 Token" },
-                      { key: "nft", icon: <Image size={14} className="text-pink-400" />, name: "NFT Collection" },
+                      { key: "nft", icon: <ImageIcon size={14} className="text-pink-400" />, name: "NFT Collection" },
                       { key: "dao", icon: <Users size={14} className="text-blue-400" />, name: "Simple DAO" },
                       { key: "staking", icon: <Landmark size={14} className="text-green-400" />, name: "Staking" },
                     ].map((template) => (
@@ -2337,7 +2323,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
                       { key: "simpleStorage", icon: <FileCode size={14} className="text-blue-400" />, name: "Simple Storage" },
                       { key: "counter", icon: <Zap size={14} className="text-yellow-400" />, name: "Counter" },
                       { key: "token", icon: <Coins size={14} className="text-green-400" />, name: "Basic Token" },
-                      { key: "nft", icon: <Image size={14} className="text-pink-400" />, name: "NFT Collection" },
+                      { key: "nft", icon: <ImageIcon size={14} className="text-pink-400" />, name: "NFT Collection" },
                     ].map((template) => (
                       <button
                         key={template.key}
@@ -2357,8 +2343,8 @@ Be concise but thorough. Format your response with markdown for readability.`;
           )}
         </AnimatePresence>
 
-        {/* Editor Area */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Editor Area — min-width keeps the code readable when a side panel opens */}
+        <div className="flex-1 flex flex-col min-w-[320px] overflow-hidden">
           {/* Monaco Editor */}
           <div className={`${terminalOpen ? "flex-1" : "h-full"} min-h-0`}>
             <MonacoEditor
@@ -2515,6 +2501,63 @@ Be concise but thorough. Format your response with markdown for readability.`;
                         </div>
                       )}
 
+                      {/* Analysis output — audits, explanations and quick actions land here */}
+                      {(aiLoading || aiResponse || teachModeContent) && (
+                        <div className="space-y-3 mb-4">
+                          {aiLoading && !aiResponse && (
+                            <div className="flex items-center gap-2 text-purple-400">
+                              <Loader2 size={14} className="animate-spin" />
+                              <span className="text-xs">Analyzing contract...</span>
+                            </div>
+                          )}
+
+                          {aiResponse && (
+                            <div
+                              className={`p-3 rounded-xl border ${
+                                isDark ? "bg-white/5 border-white/10" : "bg-gray-50 border-gray-200"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-gray-500" : "text-gray-400"}`}>
+                                  Analysis
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    setAIResponse(null);
+                                    setTeachModeContent(null);
+                                  }}
+                                  aria-label="Dismiss analysis"
+                                  className={isDark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600"}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                              <div className="whitespace-pre-wrap text-xs leading-relaxed">{aiResponse}</div>
+                            </div>
+                          )}
+
+                          {teachModeContent && (
+                            <div
+                              className={`p-3 rounded-xl border ${
+                                isDark ? "bg-amber-500/10 border-amber-500/20" : "bg-amber-50 border-amber-100"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <Lightbulb size={14} className="text-amber-500" />
+                                <span className="text-xs font-semibold">{teachModeContent.title}</span>
+                              </div>
+                              <ol className="list-decimal list-inside space-y-1">
+                                {teachModeContent.steps.map((step, idx) => (
+                                  <li key={idx} className={`text-xs ${isDark ? "text-gray-300" : "text-gray-600"}`}>
+                                    {step}
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Quick Templates Section */}
                       {architectChatHistory.length === 0 && !selectedContractType && (
                         <>
@@ -2660,10 +2703,10 @@ Be concise but thorough. Format your response with markdown for readability.`;
                         </p>
                         <div className="grid grid-cols-2 gap-2">
                           {[
-                            { icon: <Code2 size={12} />, label: "Explain", action: "explain" },
-                            { icon: <Zap size={12} />, label: "Optimize", action: "optimize" },
-                            { icon: <Shield size={12} />, label: "Secure", action: "secure" },
-                            { icon: <Bug size={12} />, label: "Debug", action: "debug" },
+                            { icon: <Code2 size={12} />, label: "Explain", action: "explain" as const },
+                            { icon: <Zap size={12} />, label: "Optimize", action: "optimize" as const },
+                            { icon: <Shield size={12} />, label: "Secure", action: "secure" as const },
+                            { icon: <Bug size={12} />, label: "Debug", action: "debug" as const },
                           ].map((item) => (
                             <button
                               key={item.action}
@@ -2723,7 +2766,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
                         </motion.button>
                       </div>
                       <p className={`text-[10px] text-center mt-2 ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                        Example: "Create an ERC20 token with 1M supply and 2% tax"
+                        Example: {'"Create an ERC20 token with 1M supply and 2% tax"'}
                       </p>
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -13,6 +13,7 @@ import ReactFlow, {
   MarkerType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import type { GraphNodeData } from '@/lib/dependencyGraph';
 
 interface GraphStats {
   totalFunctions: number;
@@ -30,7 +31,7 @@ interface DependencyGraphProps {
 }
 
 // Custom node component for functions
-const FunctionNode = ({ data }: { data: any }) => {
+const FunctionNode = ({ data }: { data: GraphNodeData }) => {
   const bgColor = data.parallelizable ? 'bg-green-600' : 'bg-red-600';
   const borderColor = data.parallelizable ? 'border-green-400' : 'border-red-400';
   const shadowColor = data.parallelizable
@@ -42,12 +43,12 @@ const FunctionNode = ({ data }: { data: any }) => {
       className={`px-4 py-2 rounded-lg ${bgColor} ${borderColor} border-2 shadow-lg ${shadowColor} min-w-[120px] text-center`}
     >
       <div className="text-white font-bold text-sm">{data.label}</div>
-      {data.reads?.length > 0 && (
+      {data.reads && data.reads.length > 0 && (
         <div className="text-xs text-blue-200 mt-1">
           Reads: {data.reads.join(', ')}
         </div>
       )}
-      {data.writes?.length > 0 && (
+      {data.writes && data.writes.length > 0 && (
         <div className="text-xs text-red-200 mt-1">
           Writes: {data.writes.join(', ')}
         </div>
@@ -57,7 +58,7 @@ const FunctionNode = ({ data }: { data: any }) => {
 };
 
 // Custom node component for storage
-const StorageNode = ({ data }: { data: any }) => {
+const StorageNode = ({ data }: { data: GraphNodeData }) => {
   const bgColor = data.parallelizable ? 'bg-purple-600' : 'bg-orange-600';
   const borderColor = data.parallelizable ? 'border-purple-400' : 'border-orange-400';
 
@@ -81,7 +82,7 @@ const nodeTypes = {
 export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stats }: DependencyGraphProps) {
   // Process nodes to add custom types
   const processedNodes = useMemo(() => {
-    return initialNodes.map((node, index) => {
+    return initialNodes.map((node) => {
       const isFunction = node.data.type === 'function';
       const baseY = 100;
       const spacing = 150;
@@ -120,8 +121,8 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
     }));
   }, [initialEdges]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(processedNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(processedEdges);
+  const [nodes, , onNodesChange] = useNodesState(processedNodes);
+  const [edges, , onEdgesChange] = useEdgesState(processedEdges);
 
   return (
     <div className="w-full h-full bg-[#0a0f16] rounded-lg overflow-hidden border border-gray-800">

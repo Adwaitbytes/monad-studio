@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const priorities = getOptimizationPriority(analysis);
 
     // Convert Map to serializable format
-    const storageSlots: Record<string, any[]> = {};
+    const storageSlots: Record<string, unknown[]> = {};
     analysis.storageSlots.forEach((value, key) => {
       storageSlots[key] = value;
     });
@@ -78,13 +78,17 @@ export async function POST(req: Request) {
       },
     });
 
-  } catch (error: any) {
+  } catch (error) {
+          const message = error instanceof Error ? error.message : "Unexpected server error";
     console.error('Parallel analysis error:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Analysis failed',
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        error: message || 'Analysis failed',
+        details:
+          process.env.NODE_ENV === 'development' && error instanceof Error
+            ? error.stack
+            : undefined,
       },
       { status: 500 }
     );

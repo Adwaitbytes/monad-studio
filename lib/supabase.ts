@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { CompilerDiagnostic, SecurityIssue } from './apiTypes';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -14,6 +15,24 @@ const createSupabaseClient = (): SupabaseClient | null => {
 
 export const supabase = createSupabaseClient();
 
+/** Monad chain ids recorded against deployments. Mainnet shares the testnet id until launch. */
+const MONAD_CHAIN_IDS = { mainnet: 10143, testnet: 10143 } as const;
+
+/** Quick-action buttons in the studio's AI panel. */
+export type QuickActionType = 'explain' | 'optimize' | 'secure' | 'debug';
+
+/** Every prompt category recorded in ai_prompts.prompt_type. */
+export type AIPromptType =
+  | QuickActionType
+  | 'generate'
+  | 'fix'
+  | 'audit'
+  | 'architect'
+  | 'research';
+
+/** Arbitrary JSON stored in jsonb columns. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 // Types for our database
 export interface User {
   id: string;
@@ -27,7 +46,7 @@ export interface User {
   total_compiles: number;
   plan_tier: 'free' | 'pro' | 'enterprise';
   referral_code?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, JsonValue>;
 }
 
 export interface Project {
@@ -47,11 +66,11 @@ export interface ActivityLog {
   session_id?: string;
   action_type: string;
   action_category?: string;
-  action_details?: Record<string, any>;
+  action_details?: Record<string, JsonValue>;
   page_url?: string;
   component_id?: string;
   duration_ms?: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, JsonValue>;
 }
 
 // Analytics tracking functions
@@ -93,7 +112,7 @@ export const analytics = {
     status: 'success' | 'error' | 'warning';
     sourceCode: string;
     compilerVersion?: string;
-    errors?: any[];
+    errors?: CompilerDiagnostic[];
     compileTimeMs?: number;
   }) {
     if (!supabase) return;
@@ -138,7 +157,7 @@ export const analytics = {
         transaction_hash: data.transactionHash,
         deployer_address: data.deployerAddress,
         gas_used: data.gasUsed,
-        chain_id: data.network === 'mainnet' ? 50311 : 50312,
+        chain_id: MONAD_CHAIN_IDS[data.network],
       });
     } catch (error) {
       console.error('Failed to track deployment:', error);
@@ -149,7 +168,7 @@ export const analytics = {
   async trackAIPrompt(data: {
     userId: string;
     projectId?: string;
-    promptType: 'generate' | 'explain' | 'fix' | 'optimize' | 'audit' | 'architect' | 'research';
+    promptType: AIPromptType;
     promptText: string;
     responseText?: string;
     tokensInput?: number;
@@ -181,7 +200,7 @@ export const analytics = {
     sourceCode: string;
     riskScore: number;
     riskLevel: string;
-    issues: any[];
+    issues: SecurityIssue[];
     auditDurationMs?: number;
   }) {
     if (!supabase) return;

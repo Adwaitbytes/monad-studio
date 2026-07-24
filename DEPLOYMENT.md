@@ -1,6 +1,6 @@
-# SomniStudio - AI-Powered Smart Contract IDE
+# MonadStudio - AI-Powered Smart Contract IDE
 
-Build, compile, audit, and deploy smart contracts on Somnia Network with AI assistance.
+Build, compile, audit, and deploy smart contracts on Monad Network with AI assistance.
 
 ## 🚀 Features
 
@@ -8,7 +8,7 @@ Build, compile, audit, and deploy smart contracts on Somnia Network with AI assi
 - **Browser IDE** - Monaco editor with Solidity syntax highlighting
 - **Smart Compilation** - Hardhat-powered compilation with OpenZeppelin support
 - **Security Auditing** - Built-in security analysis for your contracts
-- **One-Click Deploy** - Deploy to Somnia Testnet or Mainnet
+- **One-Click Deploy** - Deploy to Monad Testnet or Mainnet
 - **Template Library** - Pre-built templates (ERC20, NFT, DAO, Staking)
 - **AI Teaching Mode** - Learn from your errors with AI explanations
 - **Quick Actions** - Explain, Optimize, Secure, Debug your contracts
@@ -26,8 +26,8 @@ Build, compile, audit, and deploy smart contracts on Somnia Network with AI assi
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Adwaitbytes/SomniStudio.git
-   cd SomniStudio
+   git clone https://github.com/Adwaitbytes/monad-studio.git
+   cd monad-studio
    ```
 
 2. **Install dependencies**
@@ -43,7 +43,10 @@ Build, compile, audit, and deploy smart contracts on Somnia Network with AI assi
 4. **Edit `.env.local` with your credentials:**
 
    ```env
-   # AI Services (at least one recommended)
+   # AI Services — at least one is needed for generate/audit/explain/research.
+   # Compile, deploy and transfer work without any of these.
+   OPENROUTER_API_KEY=sk-or-v1-your_openrouter_key_here
+   OPENAI_API_KEY=sk-your_openai_key_here
    GROQ_API_KEY=gsk_your_groq_key_here
    CHAINGPT_API_KEY=your_chaingpt_key_here
 
@@ -197,16 +200,16 @@ All 45 tests should pass.
 - **Analytics**: Supabase (PostgreSQL)
 - **Icons**: Lucide React
 
-## 🌐 Somnia Network
+## 🌐 Monad Network
 
-This IDE is built for Somnia - a high-performance EVM-compatible blockchain.
+This IDE is built for Monad - a high-performance EVM-compatible blockchain.
 
-- **Testnet**: Chain ID 50312
-- **Mainnet**: Chain ID 5031
-- **RPC Testnet**: https://dream-rpc.somnia.network
-- **RPC Mainnet**: https://api.infra.mainnet.somnia.network/
-- **Explorer Testnet**: https://shannon-explorer.somnia.network
-- **Explorer Mainnet**: https://explorer.somnia.network
+- **Testnet**: Chain ID 10143
+- **Mainnet**: not yet launched
+- **RPC Testnet**: https://testnet-rpc.monad.xyz
+- **RPC Mainnet**: https://rpc.monad.xyz
+- **Explorer Testnet**: https://testnet.monadexplorer.com
+- **Explorer Mainnet**: https://monadexplorer.com
 
 ## 🔧 Troubleshooting
 
@@ -227,20 +230,25 @@ This IDE is built for Somnia - a high-performance EVM-compatible blockchain.
 
 ### MetaMask connection issues
 - Make sure MetaMask is installed
-- Add Somnia network manually if not prompted
+- Add Monad network manually if not prompted
 - Check you're on the correct network
 
 ## 📝 Environment Variables Reference
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROQ_API_KEY` | Optional | Groq API for AI features |
-| `CHAINGPT_API_KEY` | Optional | ChainGPT API (fallback) |
+| `OPENAI_API_KEY` | Optional | OpenAI, tried first for AI actions |
+| `OPENROUTER_API_KEY` | Optional | OpenRouter, tried second |
+| `OPENROUTER_MODEL` | Optional | Model slug (default `nvidia/nemotron-3-ultra-550b-a55b:free`) |
+| `GROQ_API_KEY` | Optional | Groq, tried third |
+| `CHAINGPT_API_KEY` | Optional | ChainGPT, final fallback |
 | `NEXT_PUBLIC_SUPABASE_URL` | Optional | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional | Supabase anon key |
-| `PRIVATE_KEY` | Optional | Wallet key for backend deploys |
+| `PRIVATE_KEY` | Required for deploy | Wallet key for backend deploys and q402 settlement |
+| `ETHERSCAN_API_KEY` | Optional | Contract verification + ETH→Monad import |
 
-**Note**: At least one AI API key is recommended for full functionality.
+**Note**: One AI key unlocks generate/architect/audit/explain/research. Compile,
+deploy and transfer need no AI key at all.
 
 ## 🤝 Contributing
 
@@ -252,16 +260,16 @@ MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-- Built for Somnia Network
+- Built for Monad Network
 - Powered by OpenZeppelin contracts
 - AI by Groq and ChainGPT
 - Icons by Lucide
 
 ## 📞 Support
 
-- GitHub Issues: [Report a bug](https://github.com/Adwaitbytes/SomniStudio/issues)
+- GitHub Issues: [Report a bug](https://github.com/Adwaitbytes/monad-studio/issues)
 - Twitter: [@Adwaitbytes](https://twitter.com/Adwaitbytes)
 
 ---
 
-**Made with 💜 for the Somnia ecosystem**
+**Made with 💜 for the Monad ecosystem**

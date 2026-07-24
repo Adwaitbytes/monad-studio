@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import type { Edge, Node } from 'reactflow';
+import type { GraphNodeData } from '@/lib/dependencyGraph';
 import { DependencyGraph } from './DependencyGraph';
 import { OptimizationPanel } from './OptimizationPanel';
 
@@ -35,8 +37,8 @@ interface ParallelAnalysis {
     gasImpact: string;
   }>;
   graph: {
-    nodes: any[];
-    edges: any[];
+    nodes: Node<GraphNodeData>[];
+    edges: Edge[];
   };
   stats: {
     totalFunctions: number;
@@ -87,8 +89,8 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
       }
 
       setAnalysis(data.analysis);
-    } catch (err: any) {
-      setError(err.message || 'Failed to analyze contract');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze contract');
     } finally {
       setLoading(false);
     }
@@ -105,13 +107,6 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
     }
   };
 
-  const getScoreGradient = (score: number) => {
-    if (score >= 90) return 'from-green-500 to-emerald-400';
-    if (score >= 75) return 'from-blue-500 to-cyan-400';
-    if (score >= 60) return 'from-yellow-500 to-amber-400';
-    if (score >= 40) return 'from-orange-500 to-amber-500';
-    return 'from-red-500 to-rose-400';
-  };
 
   return (
     <div className="h-full flex flex-col bg-[#0d1117] text-white">
@@ -182,7 +177,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
             </div>
             <h3 className="text-xl font-semibold mb-2">Parallel Execution Analysis</h3>
             <p className="text-gray-400 mb-6">
-              Analyze your Solidity contract to identify parallel execution potential on Monad's 10,000 TPS EVM.
+              Analyze your Solidity contract to identify parallel execution potential on Monad&apos;s 10,000 TPS EVM.
             </p>
             <button
               onClick={analyzeCode}

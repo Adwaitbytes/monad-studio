@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { verifyPayment, settlePayment } from "../../../lib/q402";
-import { createWalletClient, createPublicClient, http, defineChain, getAddress } from "viem";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { createWalletClient, createPublicClient, http, defineChain, getAddress, parseEther, isAddress } from "viem";
 import * as fs from "fs";
 import * as path from "path";
+import solc from "solc";
 import { privateKeyToAccount } from "viem/accounts";
 import { OPENZEPPELIN_SOURCES } from "../../../lib/openzeppelin-bundle";
+import type { Abi } from "viem";
 
 // --- CHAIN DEFINITIONS ---
 const monadTestnet = defineChain({
@@ -25,13 +26,23 @@ const monadMainnet = defineChain({
 
 // --- CONFIG ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const CHAINGPT_API_KEY = process.env.CHAINGPT_API_KEY;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Strong free-tier coding model; override per-deployment without a code change.
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const CHAINGPT_API_URL = "https://api.chaingpt.org/chat/stream";
 const RPC_TESTNET = "https://testnet-rpc.monad.xyz";
 const RPC_MAINNET = "https://mainnet-rpc.monad.xyz";
+
+// --- Q402 PAYMENT TERMS (server-authoritative) ---
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const MONAD_CHAIN_ID = 10143;
+const Q402_PRICE_WEI = "100000000000000"; // 0.0001 MON
+const Q402_PAYEE = "0x9dF95D6b0Fa0F09C6a90B60D1B7F79167195EDB1";
 
 // --- ADDRESS CHECKSUM FIXER ---
 function fixAddressChecksums(sourceCode: string): string {
@@ -46,27 +57,48 @@ function fixAddressChecksums(sourceCode: string): string {
 }
 
 // --- SOLIDITY COMPILER HELPER ---
-const execAsync = promisify(exec);
-const solc = require('solc');
 
-// Check if we're running in a serverless/read-only environment
-const IS_SERVERLESS = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+// Virtual filename handed to solc. Deliberately not a real path: compilation is
+// done entirely in memory so a user's contract can never overwrite a tracked
+// source file (contracts/GenContract.sol is a fixture the test suite depends on).
+const VIRTUAL_SOURCE = 'Contract.sol';
 
-// Serverless compilation with bundled OpenZeppelin
-async function compileSolidityServerless(sourceCode: string): Promise<{ abi: any[]; bytecode: string }> {
+interface SolcError {
+    severity: 'error' | 'warning' | 'info';
+    formattedMessage: string;
+}
+
+interface CompiledContract {
+    abi: Abi;
+    evm?: { bytecode?: { object?: string } };
+}
+
+interface CompileResult {
+    abi: Abi;
+    bytecode: string;
+}
+
+/**
+ * Compiles a single Solidity source in memory using solc-js, resolving
+ * OpenZeppelin imports from the bundled sources (with a node_modules fallback
+ * for local development). Identical behaviour locally and on serverless.
+ */
+async function compileSolidity(sourceCode: string): Promise<CompileResult> {
     try {
-        // Extract contract name
-        const contractNameMatch = sourceCode.match(/contract\s+(\w+)\s+(?:is\s+)?/);
+        // Fix any incorrectly checksummed addresses before handing off to solc
+        const source = fixAddressChecksums(sourceCode);
+
+        const contractNameMatch = source.match(/contract\s+(\w+)/);
         const contractName = contractNameMatch ? contractNameMatch[1] : "GenContract";
 
-        console.log(`📦 Serverless compiling contract: ${contractName}`);
+        console.log(`📦 Compiling contract: ${contractName}`);
 
         // Prepare input for solc compiler
         const input = {
             language: 'Solidity',
             sources: {
-                'GenContract.sol': {
-                    content: sourceCode
+                [VIRTUAL_SOURCE]: {
+                    content: source
                 }
             },
             settings: {
@@ -100,7 +132,7 @@ async function compileSolidityServerless(sourceCode: string): Promise<{ abi: any
                         console.log(`✅ Found in node_modules: ${importPath}`);
                         return { contents: fs.readFileSync(ozPath, 'utf8') };
                     }
-                } catch (e) {
+                } catch {
                     console.log(`⚠️ Failed to read from node_modules: ${importPath}`);
                 }
             }
@@ -113,23 +145,21 @@ async function compileSolidityServerless(sourceCode: string): Promise<{ abi: any
         const output = JSON.parse(solc.compile(JSON.stringify(input), { import: findImports }));
 
         // Check for errors
-        if (output.errors) {
-            const errors = output.errors.filter((e: any) => e.severity === 'error');
-            if (errors.length > 0) {
-                const errorMessages = errors.map((e: any) => e.formattedMessage).join('\n');
-                console.error('❌ Compilation errors:', errorMessages);
-                throw new Error(errorMessages);
-            }
-            // Log warnings
-            const warnings = output.errors.filter((e: any) => e.severity === 'warning');
-            if (warnings.length > 0) {
-                console.log(`⚠️ ${warnings.length} compilation warnings`);
-            }
+        const diagnostics: SolcError[] = output.errors ?? [];
+        const errors = diagnostics.filter((e) => e.severity === 'error');
+        if (errors.length > 0) {
+            const errorMessages = errors.map((e) => e.formattedMessage).join('\n');
+            console.error('❌ Compilation errors:', errorMessages);
+            throw new Error(errorMessages);
+        }
+        const warnings = diagnostics.filter((e) => e.severity === 'warning');
+        if (warnings.length > 0) {
+            console.log(`⚠️ ${warnings.length} compilation warnings`);
         }
 
         // Extract the compiled contract
-        const contracts = output.contracts['GenContract.sol'];
-        if (!contracts) {
+        const contracts: Record<string, CompiledContract> | undefined = output.contracts?.[VIRTUAL_SOURCE];
+        if (!contracts || Object.keys(contracts).length === 0) {
             throw new Error('No contracts found in compilation output');
         }
 
@@ -141,81 +171,20 @@ async function compileSolidityServerless(sourceCode: string): Promise<{ abi: any
             contract = contracts[availableContracts[0]];
         }
 
-        if (!contract || !contract.evm || !contract.evm.bytecode) {
-            throw new Error(`Contract compilation produced no bytecode`);
+        const bytecode = contract?.evm?.bytecode?.object;
+        if (!bytecode) {
+            throw new Error(
+                `Contract compilation produced no bytecode. Abstract contracts and interfaces cannot be deployed.`
+            );
         }
 
-        console.log(`✅ Compilation successful! Bytecode size: ${contract.evm.bytecode.object.length / 2} bytes`);
+        console.log(`✅ Compilation successful! Bytecode size: ${bytecode.length / 2} bytes`);
 
-        return {
-            abi: contract.abi,
-            bytecode: contract.evm.bytecode.object
-        };
-    } catch (error: any) {
-        console.error('❌ Serverless compilation error:', error);
-        throw new Error(`Compilation failed: ${error.message}`);
-    }
-}
-
-async function compileSolidity(sourceCode: string): Promise<{ abi: any[]; bytecode: string }> {
-    // Fix any incorrectly checksummed addresses
-    const fixedSourceCode = fixAddressChecksums(sourceCode);
-
-    // Use serverless compilation for Vercel/AWS or when filesystem is read-only
-    if (IS_SERVERLESS) {
-        console.log('🚀 Using serverless compilation (solc-js with bundled OZ)');
-        return compileSolidityServerless(fixedSourceCode);
-    }
-
-    console.log('🔧 Using local Hardhat compilation');
-
-    const contractNameMatch = fixedSourceCode.match(/contract\s+(\w+)/);
-    const contractName = contractNameMatch ? contractNameMatch[1] : "GenContract";
-
-    const contractPath = path.join(process.cwd(), "contracts", "GenContract.sol");
-
-    try {
-        fs.writeFileSync(contractPath, fixedSourceCode, "utf-8");
-        console.log('✅ Contract file written successfully');
-    } catch (writeError: any) {
-        console.error('❌ Cannot write to filesystem (read-only):', writeError.message);
-        console.log('⚠️ Falling back to serverless compilation');
-        return compileSolidityServerless(fixedSourceCode);
-    }
-
-    try {
-        const { stdout, stderr } = await execAsync("npx hardhat compile --force", {
-            cwd: process.cwd(),
-            timeout: 60000,
-        });
-
-        const artifactPath = path.join(
-            process.cwd(),
-            "artifacts",
-            "contracts",
-            "GenContract.sol",
-            `${contractName}.json`
-        );
-
-        if (!fs.existsSync(artifactPath)) {
-            const artifactDir = path.join(process.cwd(), "artifacts", "contracts", "GenContract.sol");
-            if (fs.existsSync(artifactDir)) {
-                const files = fs.readdirSync(artifactDir).filter(f => f.endsWith(".json") && !f.includes(".dbg."));
-                if (files.length > 0) {
-                    const artifact = JSON.parse(fs.readFileSync(path.join(artifactDir, files[0]), "utf-8"));
-                    return { abi: artifact.abi, bytecode: artifact.bytecode };
-                }
-            }
-            throw new Error(`Compiled artifact not found for contract ${contractName}`);
-        }
-
-        const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf-8"));
-        return { abi: artifact.abi, bytecode: artifact.bytecode };
-    } catch (error: any) {
-        const errorMessage = error.stderr || error.message || "Unknown compilation error";
-        const errorMatch = errorMessage.match(/Error[^:]*:\s*(.+?)(?:\n|$)/s);
-        const cleanError = errorMatch ? errorMatch[1].trim() : errorMessage;
-        throw new Error(`Compilation failed: ${cleanError}`);
+        return { abi: contract.abi, bytecode };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('❌ Compilation error:', message);
+        throw new Error(`Compilation failed: ${message}`);
     }
 }
 
@@ -255,6 +224,44 @@ async function callOpenAIAPI(prompt: string, systemRole: string = "You are a hel
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
+}
+
+// --- OPENROUTER API HELPER (OpenAI-compatible, multi-provider) ---
+async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a helpful AI assistant."): Promise<string> {
+    if (!OPENROUTER_API_KEY) throw new Error("OpenRouter API key not configured");
+
+    console.log(`🤖 Calling OpenRouter (${OPENROUTER_MODEL})...`);
+
+    const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+            "Content-Type": "application/json",
+            // OpenRouter attributes usage to these; both are optional but recommended.
+            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+            "X-Title": "MonadStudio"
+        },
+        body: JSON.stringify({
+            model: OPENROUTER_MODEL,
+            messages: [
+                { role: "system", content: systemRole },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 4096
+        })
+    });
+
+    if (!response.ok) {
+        const err = await response.text();
+        console.error("❌ OpenRouter API error:", err);
+        throw new Error(`OpenRouter API error: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error("OpenRouter returned an empty completion");
+    return content;
 }
 
 // --- GROQ API HELPER (Fast Fallback) ---
@@ -312,17 +319,29 @@ async function callAI(prompt: string, systemRole: string, userAddress?: string):
     if (OPENAI_API_KEY) {
         try {
             return await callOpenAIAPI(prompt, systemRole);
-        } catch (error: any) {
-            console.log(`⚠️ OpenAI failed: ${error.message}, trying fallback...`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`⚠️ OpenAI failed: ${message}, trying fallback...`);
         }
     }
 
-    // Try Groq second (fast)
+    // Try OpenRouter second (broad model access, free tiers)
+    if (OPENROUTER_API_KEY) {
+        try {
+            return await callOpenRouterAPI(prompt, systemRole);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`⚠️ OpenRouter failed: ${message}, trying Groq...`);
+        }
+    }
+
+    // Try Groq third (fast)
     if (GROQ_API_KEY) {
         try {
             return await callGroqAPI(prompt, systemRole);
-        } catch (error: any) {
-            console.log(`⚠️ Groq failed: ${error.message}, trying ChainGPT...`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(`⚠️ Groq failed: ${message}, trying ChainGPT...`);
         }
     }
 
@@ -330,7 +349,7 @@ async function callAI(prompt: string, systemRole: string, userAddress?: string):
     if (CHAINGPT_API_KEY) {
         try {
             return await callChainGPTAPI("general_assistant", prompt, userAddress);
-        } catch (error: any) {
+        } catch (error) {
             console.error("❌ ChainGPT also failed:", error);
         }
     }
@@ -345,11 +364,14 @@ export async function POST(req: Request) {
 
         console.log(`🔹 API Request: [${action}] from [${userAddress?.slice(0, 10)}...]`);
 
-        // Check API keys
-        if (!OPENAI_API_KEY && !GROQ_API_KEY && !CHAINGPT_API_KEY) {
+        // Only the LLM-backed actions need a model provider. compile/deploy/transfer
+        // run entirely on solc and viem, so they must stay available without one.
+        const AI_ACTIONS = ["research", "generate", "architect", "audit", "explain_error"];
+        const hasAIProvider = Boolean(OPENAI_API_KEY || OPENROUTER_API_KEY || GROQ_API_KEY || CHAINGPT_API_KEY);
+        if (AI_ACTIONS.includes(action) && !hasAIProvider) {
             return NextResponse.json({
-                error: "Server Error: No AI API key configured. Set OPENAI_API_KEY, GROQ_API_KEY, or CHAINGPT_API_KEY."
-            }, { status: 500 });
+                error: `"${action}" needs an AI provider. Set OPENAI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, or CHAINGPT_API_KEY in .env.local.`
+            }, { status: 503 });
         }
 
         if (!userAddress) {
@@ -371,8 +393,8 @@ export async function POST(req: Request) {
                 const witnessData = {
                     domain: {
                         name: "q402", version: "1",
-                        chainId: network === "mainnet" ? 10143 : 10143,
-                        verifyingContract: "0x0000000000000000000000000000000000000000"
+                        chainId: MONAD_CHAIN_ID,
+                        verifyingContract: ZERO_ADDRESS
                     },
                     types: {
                         Witness: [
@@ -388,12 +410,14 @@ export async function POST(req: Request) {
                     primaryType: "Witness",
                     message: {
                         owner: userAddress,
-                        token: "0x0000000000000000000000000000000000000000",
-                        amount: "100000000000000",
-                        to: "0x9dF95D6b0Fa0F09C6a90B60D1B7F79167195EDB1",
+                        token: ZERO_ADDRESS,
+                        amount: Q402_PRICE_WEI,
+                        to: Q402_PAYEE,
                         deadline: Math.floor(Date.now() / 1000) + 3600,
-                        paymentId: "0x" + Math.random().toString(16).slice(2).padEnd(64, '0'),
-                        nonce: Date.now().toString()
+                        // Unguessable payment id — a predictable one lets a third party
+                        // pre-sign a witness for someone else's session.
+                        paymentId: `0x${randomBytes(32).toString("hex")}`,
+                        nonce: `0x${randomBytes(8).toString("hex")}`
                     }
                 };
                 return NextResponse.json({
@@ -410,7 +434,14 @@ export async function POST(req: Request) {
             try {
                 const buffer = Buffer.from(paymentHeader, 'base64');
                 const payload = JSON.parse(buffer.toString('utf-8'));
-                const isValid = await verifyPayment(payload);
+                // The terms are re-asserted server-side; a client-supplied witness that
+                // names a different payee, a smaller amount or another wallet is rejected.
+                const isValid = await verifyPayment(payload, {
+                    payer: userAddress,
+                    payee: Q402_PAYEE,
+                    minAmount: BigInt(Q402_PRICE_WEI),
+                    chainId: MONAD_CHAIN_ID,
+                });
                 if (!isValid) throw new Error("Invalid Signature");
                 await settlePayment(payload);
                 console.log("✅ Q402: Payment Verified & Settled.");
@@ -573,12 +604,13 @@ Provide a structured audit report with:
                     bytecode: bytecode.startsWith('0x') ? bytecode : `0x${bytecode}`,
                     contractSize: bytecode.length / 2
                 });
-            } catch (error: any) {
-                console.error("❌ Compilation failed:", error.message);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Compilation failed";
+                console.error("❌ Compilation failed:", message);
                 return NextResponse.json({
                     success: false,
-                    errors: [{ message: error.message, severity: "error", type: "CompilerError" }],
-                    message: error.message
+                    errors: [{ message, severity: "error", type: "CompilerError" }],
+                    message
                 });
             }
         }
@@ -587,7 +619,8 @@ Provide a structured audit report with:
             console.log("🤖 Explaining error...");
 
             const { errors } = body;
-            const errorMessages = errors?.map((e: any) => e.message).join("\n") || "Unknown error";
+            const errorMessages =
+                (errors as { message: string }[] | undefined)?.map((e) => e.message).join("\n") || "Unknown error";
 
             const explainPrompt = `You are a Solidity teacher. A developer has these compilation errors:
 
@@ -683,11 +716,11 @@ Format as JSON:
                     logs: `Contract deployed to: ${address}\nTransaction: ${hash}`,
                     gasUsed: receipt.gasUsed?.toString()
                 });
-            } catch (error: any) {
+            } catch (error) {
                 console.error("❌ Deployment failed:", error);
                 return NextResponse.json({
                     success: false,
-                    error: error.message || "Deployment Failed"
+                    error: error instanceof Error ? error.message : "Deployment Failed"
                 }, { status: 500 });
             }
         }
@@ -697,6 +730,15 @@ Format as JSON:
             const isMainnet = network === "mainnet";
             const targetRpc = isMainnet ? RPC_MAINNET : RPC_TESTNET;
             const chain = isMainnet ? monadMainnet : monadTestnet;
+
+            // Validate caller input before reporting server configuration, so a
+            // typo'd address always surfaces as a 400 rather than a 500.
+            if (!isAddress(toAddress ?? "")) {
+                return NextResponse.json({ error: "Invalid recipient address" }, { status: 400 });
+            }
+            if (!/^\d+(\.\d+)?$/.test(String(amount)) || Number(amount) <= 0) {
+                return NextResponse.json({ error: "Amount must be a positive decimal number" }, { status: 400 });
+            }
 
             const privateKey = process.env.PRIVATE_KEY;
             if (!privateKey) {
@@ -710,21 +752,25 @@ Format as JSON:
                 const walletClient = createWalletClient({ account, chain, transport: http(targetRpc) });
 
                 const hash = await walletClient.sendTransaction({
-                    to: toAddress as `0x${string}`,
-                    value: BigInt(Math.floor(parseFloat(amount) * 10 ** 18)),
+                    to: getAddress(toAddress),
+                    // parseEther keeps full wei precision; float maths silently corrupts
+                    // amounts like 1.1 into 1100000000000000100 wei.
+                    value: parseEther(String(amount)),
                 });
 
                 await publicClient.waitForTransactionReceipt({ hash });
                 return NextResponse.json({ success: true, txHash: hash });
-            } catch (error: any) {
-                return NextResponse.json({ error: error.message || "Transfer Failed" }, { status: 500 });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Transfer Failed";
+                return NextResponse.json({ error: message }, { status: 500 });
             }
         }
 
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
-    } catch (error: any) {
+    } catch (error) {
         console.error("❌ API Error:", error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        const message = error instanceof Error ? error.message : "Unexpected server error";
+        return NextResponse.json({ success: false, error: message }, { status: 500 });
     }
 }

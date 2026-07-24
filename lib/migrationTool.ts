@@ -6,9 +6,14 @@
  * Monad's parallel EVM execution.
  */
 
-import { analyzeParallelPotential, ParallelAnalysisResult } from './parallelAnalyzer';
+import { analyzeParallelPotential } from './parallelAnalyzer';
 
 // ============= TYPE DEFINITIONS =============
+
+/** One entry of Etherscan's multi-file `SourceCode` JSON blob. */
+interface EtherscanSource {
+  content: string;
+}
 
 export type NetworkType = 'mainnet' | 'sepolia';
 
@@ -290,7 +295,7 @@ export async function fetchContractSource(
     try {
       // Remove outer braces and parse
       const jsonStr = sourceCode.slice(1, -1);
-      const parsed = JSON.parse(jsonStr);
+      const parsed: { sources?: Record<string, EtherscanSource> } = JSON.parse(jsonStr);
 
       // Extract main contract source
       if (parsed.sources) {
@@ -302,11 +307,11 @@ export async function fetchContractSource(
         );
 
         if (mainFile) {
-          sourceCode = (mainFile[1] as any).content;
+          sourceCode = mainFile[1].content;
         } else {
           // Concatenate all sources
           sourceCode = sources
-            .map(([path, content]: [string, any]) => `// File: ${path}\n${content.content}`)
+            .map(([path, content]) => `// File: ${path}\n${content.content}`)
             .join('\n\n');
         }
       }
@@ -410,8 +415,6 @@ export function transformForMonad(
   const changes: CodeChange[] = [];
   let autoFixedCount = 0;
   let manualFixCount = 0;
-
-  const lines = sourceCode.split('\n');
 
   // Auto-fix: Add SPDX license if missing
   if (autoFix && !sourceCode.includes('SPDX-License-Identifier')) {

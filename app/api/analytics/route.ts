@@ -2,6 +2,28 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+interface UserRecord {
+  address: string;
+  firstDeployment: string;
+  lastDeployment?: string;
+  totalDeployments: number;
+  totalGasUsed: string;
+  templates: Record<string, number>;
+  favoriteTemplate?: string | null;
+}
+
+interface UserStats {
+  firstDeployment: string;
+  totalGasUsed: string;
+  favoriteTemplate: string | null;
+  deploymentHistory: DeploymentRecord[];
+}
+
+interface AnalyticsFile {
+  deployments: DeploymentRecord[];
+  users: Record<string, UserRecord>;
+}
+
 interface DeploymentRecord {
   id: string;
   address: string;
@@ -28,14 +50,14 @@ function ensureDataDirectory() {
 }
 
 // Read analytics data
-function readAnalytics() {
+function readAnalytics(): AnalyticsFile {
   ensureDataDirectory();
   const data = fs.readFileSync(ANALYTICS_FILE, "utf-8");
   return JSON.parse(data);
 }
 
 // Write analytics data
-function writeAnalytics(data: any) {
+function writeAnalytics(data: AnalyticsFile) {
   ensureDataDirectory();
   fs.writeFileSync(ANALYTICS_FILE, JSON.stringify(data, null, 2));
 }
@@ -62,14 +84,23 @@ export async function GET(req: Request) {
     }
     
     // Calculate statistics
-    const stats = {
+    const stats: {
+      totalDeployments: number;
+      userDeployments: number | null;
+      networkBreakdown: { testnet: number; mainnet: number };
+      templateUsage: Record<string, number>;
+      recentDeployments: DeploymentRecord[];
+      uniqueUsers: number;
+      last24Hours: number;
+      userStats?: UserStats;
+    } = {
       totalDeployments: deployments.length,
       userDeployments: userAddress ? filteredDeployments.length : null,
       networkBreakdown: {
         testnet: deployments.filter(d => d.network === "testnet").length,
         mainnet: deployments.filter(d => d.network === "mainnet").length
       },
-      templateUsage: {} as Record<string, number>,
+      templateUsage: {},
       recentDeployments: deployments.slice(-10).reverse(),
       uniqueUsers: Object.keys(analytics.users || {}).length,
       last24Hours: deployments.filter(d => {
@@ -89,7 +120,7 @@ export async function GET(req: Request) {
     // User-specific stats
     if (userAddress && analytics.users[userAddress.toLowerCase()]) {
       const userData = analytics.users[userAddress.toLowerCase()];
-      (stats as any).userStats = {
+      stats.userStats = {
         firstDeployment: userData.firstDeployment,
         totalGasUsed: userData.totalGasUsed || "0",
         favoriteTemplate: userData.favoriteTemplate || null,
@@ -103,9 +134,10 @@ export async function GET(req: Request) {
       deployments: filteredDeployments
     });
     
-  } catch (error: any) {
+  } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected server error";
     console.error("Analytics GET error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -178,9 +210,10 @@ export async function POST(req: Request) {
       message: "Deployment recorded successfully"
     });
     
-  } catch (error: any) {
+  } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected server error";
     console.error("Analytics POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -194,7 +227,8 @@ export async function DELETE() {
       success: true,
       message: "Analytics data cleared"
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

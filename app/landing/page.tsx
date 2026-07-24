@@ -5,7 +5,6 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Code2, 
-  Zap, 
   Shield, 
   Rocket, 
   Brain, 
@@ -17,18 +16,17 @@ import {
   Twitter,
   ArrowRight,
   Play,
-  CheckCircle2,
   Sparkles,
   Terminal,
   FileCode,
-  Bug,
-  Cpu
+  Bug
 } from "lucide-react";
 import { useThemeStore } from "@/lib/store";
+import { useHydrated } from "@/lib/useHydrated";
 
 export default function LandingPage() {
   const { theme, toggleTheme } = useThemeStore();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [metrics, setMetrics] = useState({
     developers: 2847,
     contracts: 12543,
@@ -37,7 +35,6 @@ export default function LandingPage() {
   });
 
   useEffect(() => {
-    setMounted(true);
     // Simulate live metrics updates
     const interval = setInterval(() => {
       setMetrics(prev => ({
@@ -175,7 +172,7 @@ export default function LandingPage() {
               }`}
             >
               <Sparkles size={14} />
-              Built for Monad's 10,000 TPS
+              Built for Monad&apos;s 10,000 TPS
               <ChevronRight size={14} />
             </motion.div>
 
@@ -284,11 +281,11 @@ export default function LandingPage() {
               <div className={`col-span-7 p-6 font-mono text-sm border-r ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
                 <pre className={isDark ? 'text-gray-300' : 'text-gray-700'}>
                   <code>
-                    <span className="text-purple-400">// SPDX-License-Identifier: MIT</span>{'\n'}
+                    <span className="text-purple-400">{'// SPDX-License-Identifier: MIT'}</span>{'\n'}
                     <span className="text-pink-400">pragma</span> <span className="text-cyan-400">solidity</span> ^0.8.24;{'\n\n'}
-                    <span className="text-pink-400">import</span> <span className="text-green-400">"@openzeppelin/contracts/token/ERC20/ERC20.sol"</span>;{'\n\n'}
+                    <span className="text-pink-400">import</span> <span className="text-green-400">{'"@openzeppelin/contracts/token/ERC20/ERC20.sol"'}</span>;{'\n\n'}
                     <span className="text-pink-400">contract</span> <span className="text-yellow-400">MyToken</span> <span className="text-pink-400">is</span> ERC20 {'{'}{'\n'}
-                    {'    '}<span className="text-pink-400">constructor</span>() ERC20(<span className="text-green-400">"Monad Token"</span>, <span className="text-green-400">"MON"</span>) {'{'}{'\n'}
+                    {'    '}<span className="text-pink-400">constructor</span>() ERC20(<span className="text-green-400">{'"Monad Token"'}</span>, <span className="text-green-400">{'"MON"'}</span>) {'{'}{'\n'}
                     {'        '}_mint(msg.sender, <span className="text-cyan-400">1000000</span> * <span className="text-cyan-400">10</span> ** decimals());{'\n'}
                     {'    }'}{'\n'}
                     {'}'}

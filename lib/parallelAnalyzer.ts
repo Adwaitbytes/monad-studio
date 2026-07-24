@@ -75,7 +75,6 @@ export interface ParallelAnalysisResult {
  */
 export function analyzeParallelPotential(sourceCode: string): ParallelAnalysisResult {
   // Extract contract information
-  const contractName = extractContractName(sourceCode);
   const functions = extractFunctions(sourceCode);
   const stateVariables = extractStateVariables(sourceCode);
 
@@ -118,14 +117,6 @@ export function analyzeParallelPotential(sourceCode: string): ParallelAnalysisRe
 }
 
 /**
- * Extract contract name from source code
- */
-function extractContractName(sourceCode: string): string {
-  const match = sourceCode.match(/contract\s+(\w+)/);
-  return match ? match[1] : 'Unknown';
-}
-
-/**
  * Extract all function definitions
  */
 function extractFunctions(sourceCode: string): { name: string; visibility: string; body: string; line: number }[] {
@@ -134,8 +125,6 @@ function extractFunctions(sourceCode: string): { name: string; visibility: strin
   // Match function definitions
   const functionRegex = /function\s+(\w+)\s*\([^)]*\)\s*(public|external|internal|private)?\s*[^{]*\{/g;
   let match;
-
-  const lines = sourceCode.split('\n');
 
   while ((match = functionRegex.exec(sourceCode)) !== null) {
     const name = match[1];
@@ -193,11 +182,6 @@ function extractFunctions(sourceCode: string): { name: string; visibility: strin
 function extractStateVariables(sourceCode: string): { name: string; type: string; slot: number }[] {
   const variables: { name: string; type: string; slot: number }[] = [];
 
-  // Match state variable declarations (simplified)
-  // Looks for: type [visibility] name [= value];
-  const stateVarRegex = /^\s*(mapping\s*\([^)]+\)|uint\d*|int\d*|address|bool|bytes\d*|string|bytes)\s+(public|private|internal)?\s*(\w+)/gm;
-
-  let match;
   let slotIndex = 0;
 
   // Find the contract body
@@ -283,7 +267,7 @@ function analyzeStorageAccess(
  */
 function detectConflicts(
   storageAccess: Record<string, StorageAccess[]>,
-  functions: { name: string; visibility: string; body: string; line: number }[]
+  _functions: { name: string; visibility: string; body: string; line: number }[]
 ): StateConflict[] {
   const conflicts: StateConflict[] = [];
 

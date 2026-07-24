@@ -1,17 +1,17 @@
-# Building Your First ERC20 Token on Somnia
+# Building Your First ERC20 Token on Monad
 
-## Welcome to Somnia Developer Studio! 🚀
+## Welcome to MonadStudio! 🚀
 
-This tutorial will guide you through creating and deploying your first ERC20 token on the Somnia blockchain.
+This tutorial will guide you through creating and deploying your first ERC20 token on the Monad blockchain.
 
 ## What You'll Learn
 - Understanding ERC20 token standard
-- Deploying to Somnia testnet
+- Deploying to Monad testnet
 - Interacting with your token
 - Best security practices
 
 ## Prerequisites
-- MetaMask wallet connected to Somnia Testnet
+- MetaMask wallet connected to Monad Testnet
 - Basic understanding of blockchain concepts
 
 ## Step 1: Understanding ERC20 Tokens
@@ -48,7 +48,7 @@ contract GenContract is ERC20, ERC20Burnable, Ownable {
 ## Step 3: Customizing Your Token
 
 ### Token Name & Symbol
-- **Name**: Full token name (e.g., "Somnia Gold")
+- **Name**: Full token name (e.g., "Monad Gold")
 - **Symbol**: Ticker symbol (e.g., "SGOLD")
 - **Initial Supply**: Number of tokens to mint initially
 
@@ -75,13 +75,13 @@ Before deployment, our system runs automatic security analysis:
 - 🔴 **HIGH**: Fixes required
 - ⛔ **CRITICAL**: DO NOT DEPLOY
 
-## Step 5: Deploying to Somnia
+## Step 5: Deploying to Monad
 
 ### Network Details:
-- **Network**: Somnia Dream Testnet
-- **Chain ID**: 50312
-- **RPC URL**: https://dream-rpc.somnia.network
-- **Explorer**: https://explorer.somnia.network
+- **Network**: Monad Testnet
+- **Chain ID**: 10143
+- **RPC URL**: https://testnet-rpc.monad.xyz
+- **Explorer**: https://monadexplorer.com
 
 ### Deployment Process:
 1. Click "Deploy to Testnet"
@@ -161,7 +161,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 - Avoid unnecessary storage writes
 - Use `immutable` for values set in constructor
 
-### Somnia Advantages:
+### Monad Advantages:
 - ⚡ Sub-second finality
 - 💰 Lower gas fees than Ethereum
 - 🚀 Higher throughput (400k+ TPS)
@@ -175,7 +175,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 - 📖 [DAO Tutorial](./simple-dao.md)
 
 ### Resources:
-- [Somnia Documentation](https://docs.somnia.network)
+- [Monad Documentation](https://docs.monad.xyz)
 - [OpenZeppelin Docs](https://docs.openzeppelin.com)
 - [Solidity by Example](https://solidity-by-example.org)
 
@@ -184,7 +184,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 ### Common Issues:
 
 **"Insufficient funds for gas"**
-- Get testnet tokens from Somnia faucet
+- Get testnet tokens from Monad faucet
 
 **"Transaction reverted"**
 - Check function parameters
@@ -196,7 +196,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 
 ## Congratulations! 🎉
 
-You've successfully created and deployed your first ERC20 token on Somnia!
+You've successfully created and deployed your first ERC20 token on Monad!
 
 ### What's Next?
 - Add liquidity to DEX
@@ -207,10 +207,10 @@ You've successfully created and deployed your first ERC20 token on Somnia!
 ---
 
 **Need Help?**
-- Join [Somnia Discord](https://discord.gg/somnia)
-- Check [Developer Docs](https://docs.somnia.network)
-- Ask in [Developer Forum](https://forum.somnia.network)
+- Join [Monad Discord](https://discord.gg/monad)
+- Check [Developer Docs](https://docs.monad.xyz)
+- Ask in [Developer Forum](https://docs.monad.xyz)
 
 ---
 
-*Built with ❤️ by Somnia Developer Studio*
+*Built with ❤️ by MonadStudio*

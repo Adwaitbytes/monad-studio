@@ -45,10 +45,11 @@ export async function GET(req: Request) {
       slug,
       filename,
     });
-  } catch (error: any) {
+  } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected server error";
     console.error("Tutorial API Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: message },
       { status: 500 }
     );
   }

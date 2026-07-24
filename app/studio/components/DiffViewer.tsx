@@ -21,13 +21,6 @@ interface DiffViewerProps {
   isDark?: boolean;
 }
 
-interface DiffLine {
-  lineNumber: number;
-  type: 'unchanged' | 'removed' | 'added' | 'modified';
-  content: string;
-  changeIndex?: number;
-}
-
 export function DiffViewer({
   original,
   modified,

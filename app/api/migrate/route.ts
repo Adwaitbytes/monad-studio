@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     const {
       mode,
       address,
-      network = 'mainnet',
+      network: rawNetwork = 'ethereum',
       code,
       autoFix = true,
     } = body;
@@ -56,9 +56,12 @@ export async function POST(req: Request) {
       }
 
       // Validate network
-      if (!['mainnet', 'sepolia'].includes(network)) {
+      // 'mainnet' is accepted as a legacy alias for the Ethereum source chain.
+      const network = rawNetwork === 'mainnet' ? 'ethereum' : rawNetwork;
+
+      if (!['ethereum', 'sepolia'].includes(network)) {
         return NextResponse.json(
-          { success: false, error: 'Invalid network. Use "mainnet" or "sepolia".' },
+          { success: false, error: 'Invalid network. Use "ethereum" or "sepolia".' },
           { status: 400 }
         );
       }
@@ -196,7 +199,7 @@ export async function GET() {
             parameters: {
               mode: '"address"',
               address: 'Contract address (0x...)',
-              network: '"mainnet" | "sepolia" (default: mainnet)',
+              network: '"ethereum" | "sepolia" (default: ethereum)',
               autoFix: 'boolean (default: true)',
             },
           },

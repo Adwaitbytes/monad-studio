@@ -139,8 +139,8 @@ describe("GenContract - ERC20 Token", function () {
     });
   });
 
-  describe("ETH Handling", function () {
-    it("Should receive ETH", async function () {
+  describe("MON Handling", function () {
+    it("Should receive MON", async function () {
       await owner.sendTransaction({
         to: await genContract.getAddress(),
         value: ethers.parseEther("1")
@@ -150,14 +150,14 @@ describe("GenContract - ERC20 Token", function () {
       expect(balance).to.equal(ethers.parseEther("1"));
     });
 
-    it("Should allow owner to withdraw ETH", async function () {
+    it("Should allow owner to withdraw MON", async function () {
       await owner.sendTransaction({
         to: await genContract.getAddress(),
         value: ethers.parseEther("1")
       });
       
       const initialBalance = await ethers.provider.getBalance(owner.address);
-      const tx = await genContract.withdrawETH();
+      const tx = await genContract.withdrawMON();
       const receipt = await tx.wait();
       const gasCost = receipt.gasUsed * receipt.gasPrice;
       
@@ -168,14 +168,14 @@ describe("GenContract - ERC20 Token", function () {
       );
     });
 
-    it("Should not allow non-owner to withdraw ETH", async function () {
+    it("Should not allow non-owner to withdraw MON", async function () {
       await owner.sendTransaction({
         to: await genContract.getAddress(),
         value: ethers.parseEther("1")
       });
       
       await expect(
-        genContract.connect(addr1).withdrawETH()
+        genContract.connect(addr1).withdrawMON()
       ).to.be.revertedWithCustomError(genContract, "OwnableUnauthorizedAccount");
     });
   });

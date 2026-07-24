@@ -19,7 +19,7 @@ contract GenContract is ERC20, ERC20Burnable, ERC20Pausable, Ownable {
     error NoBalanceToWithdraw();
     error WithdrawFailed();
 
-    event ETHWithdrawn(address indexed to, uint256 amount);
+    event MONWithdrawn(address indexed to, uint256 amount);
 
     constructor() ERC20("GenesisToken", "GNT") Ownable(msg.sender) {
         _mint(msg.sender, INITIAL_SUPPLY);
@@ -40,15 +40,15 @@ contract GenContract is ERC20, ERC20Burnable, ERC20Pausable, Ownable {
         _unpause();
     }
 
-    /// @notice Sweeps any ETH sent to the contract to the owner.
-    function withdrawETH() external onlyOwner {
+    /// @notice Sweeps any MON sent to the contract to the owner.
+    function withdrawMON() external onlyOwner {
         uint256 balance = address(this).balance;
         if (balance == 0) revert NoBalanceToWithdraw();
 
         (bool sent, ) = payable(owner()).call{value: balance}("");
         if (!sent) revert WithdrawFailed();
 
-        emit ETHWithdrawn(owner(), balance);
+        emit MONWithdrawn(owner(), balance);
     }
 
     receive() external payable {}

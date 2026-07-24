@@ -49,6 +49,9 @@ node_modules
 /cache
 /artifacts
 
+# AI-generated scratch contracts (never part of the source tree)
+/contracts/generated
+
 # TypeChain files
 /typechain
 /typechain-types
@@ -77,3 +80,9 @@ node_modules
 
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

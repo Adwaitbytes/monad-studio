@@ -1,5 +1,5 @@
 {
-  "name": "vq",
+  "name": "monad-studio",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -48,10 +48,18 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
-  "description": "This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).",
+  "description": "MonadStudio: browser IDE for building, auditing and shipping smart contracts on the Monad network.",
   "main": "index.js",
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "monad",
+    "solidity",
+    "smart-contracts",
+    "ide",
+    "web3",
+    "parallel-evm",
+    "hardhat"
+  ],
+  "author": "Adwait Keshari",
+  "license": "MIT",
   "type": "module"
 }

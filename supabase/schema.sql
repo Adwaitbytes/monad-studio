@@ -1,5 +1,5 @@
 -- ============================================
--- SOMNISTUDIO SUPABASE SCHEMA
+-- MONADSTUDIO SUPABASE SCHEMA
 -- Complete data capture for investor-ready analytics
 -- ============================================
 

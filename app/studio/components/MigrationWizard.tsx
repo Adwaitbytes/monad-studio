@@ -6,7 +6,7 @@ import type { CodeChange } from '@/lib/migrationTool';
 
 type WizardStep = 'input' | 'analyzing' | 'results' | 'diff';
 type InputMode = 'address' | 'code';
-type NetworkType = 'mainnet' | 'sepolia';
+type NetworkType = 'ethereum' | 'sepolia';
 
 interface MigrationResult {
   contract: {
@@ -57,7 +57,7 @@ interface MigrationWizardProps {
 export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps) {
   const [step, setStep] = useState<WizardStep>('input');
   const [inputMode, setInputMode] = useState<InputMode>('address');
-  const [network, setNetwork] = useState<NetworkType>('mainnet');
+  const [network, setNetwork] = useState<NetworkType>('ethereum');
   const [address, setAddress] = useState('');
   const [pastedCode, setPastedCode] = useState('');
   const [result, setResult] = useState<MigrationResult | null>(null);
@@ -247,7 +247,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                     onChange={(e) => setNetwork(e.target.value as NetworkType)}
                     className="w-full px-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white focus:border-blue-500 focus:outline-none"
                   >
-                    <option value="mainnet">Ethereum Mainnet</option>
+                    <option value="ethereum">Ethereum Mainnet</option>
                     <option value="sepolia">Sepolia Testnet</option>
                   </select>
                 </div>

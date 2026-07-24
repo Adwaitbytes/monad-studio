@@ -125,7 +125,7 @@ public async Task<string> MintGameAsset(string playerAddress) {
         "2" // Rare item
     };
     
-    string value = "10000000000000000"; // 0.01 ETH
+    string value = "10000000000000000"; // 0.01 MON
     string response = await ERC721.MintNFT(contract, method, args, value);
     return response;
 }

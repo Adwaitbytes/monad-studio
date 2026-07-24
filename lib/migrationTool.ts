@@ -15,7 +15,9 @@ interface EtherscanSource {
   content: string;
 }
 
-export type NetworkType = 'mainnet' | 'sepolia';
+/** Source chain the contract is imported FROM. Deliberately not called
+ * 'mainnet': that string means Monad mainnet everywhere else in this codebase. */
+export type NetworkType = 'ethereum' | 'sepolia';
 
 export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
@@ -91,7 +93,7 @@ export interface MigrationResult {
 // ============= NETWORK CONFIGURATION =============
 
 const EXPLORER_APIS: Record<NetworkType, { api: string; name: string }> = {
-  mainnet: {
+  ethereum: {
     api: 'https://api.etherscan.io/api',
     name: 'Ethereum Mainnet',
   },
@@ -271,6 +273,13 @@ export async function fetchContractSource(
     throw new Error('Invalid Ethereum address format');
   }
 
+  if (!key) {
+    throw new Error(
+      'Importing from Ethereum needs an Etherscan API key. Set ETHERSCAN_API_KEY in .env.local, ' +
+      'or paste the contract source directly using "code" mode.'
+    );
+  }
+
   // Fetch contract source
   const url = `${explorer.api}?module=contract&action=getsourcecode&address=${address}&apikey=${key}`;
 
@@ -278,7 +287,14 @@ export async function fetchContractSource(
   const data = await response.json();
 
   if (data.status !== '1' || !data.result || data.result.length === 0) {
-    throw new Error(data.message || 'Failed to fetch contract source');
+    // Etherscan answers a bad key or an unknown address with a bare "NOTOK".
+    const detail = typeof data.result === 'string' ? data.result : data.message;
+    throw new Error(
+      detail && detail !== 'NOTOK'
+        ? detail
+        : `Etherscan could not return source for ${address} on ${explorer.name}. ` +
+          'Check the address is a verified contract and that ETHERSCAN_API_KEY is valid.'
+    );
   }
 
   const result = data.result[0];

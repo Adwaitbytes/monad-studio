@@ -729,7 +729,7 @@ const ARCHITECT_CONTRACT_TYPES = [
       { key: "name", label: "Collection Name", type: "text", placeholder: "My NFTs" },
       { key: "symbol", label: "Symbol", type: "text", placeholder: "MNFT" },
       { key: "maxSupply", label: "Max Supply", type: "number", placeholder: "10000" },
-      { key: "mintPrice", label: "Mint Price (ETH)", type: "number", placeholder: "0.05" },
+      { key: "mintPrice", label: "Mint Price (MON)", type: "number", placeholder: "0.05" },
       { key: "royaltyFee", label: "Royalty (%)", type: "number", placeholder: "5" },
     ],
   },

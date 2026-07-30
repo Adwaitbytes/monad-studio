@@ -227,11 +227,30 @@ async function callOpenAIAPI(prompt: string, systemRole: string = "You are a hel
 }
 
 // --- OPENROUTER API HELPER (OpenAI-compatible, multi-provider) ---
-async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a helpful AI assistant."): Promise<string> {
-    if (!OPENROUTER_API_KEY) throw new Error("OpenRouter API key not configured");
 
-    console.log(`🤖 Calling OpenRouter (${OPENROUTER_MODEL})...`);
+/**
+ * Models tried in order. Upstream providers behind a single slug go down or
+ * rate limit intermittently, and a one-in-three failure is not acceptable for
+ * an interactive editor, so a failed model falls through to the next one.
+ * OPENROUTER_MODEL may hold a comma-separated list to override this.
+ */
+const OPENROUTER_FALLBACKS = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+    "openai/gpt-oss-20b:free",
+];
 
+function openRouterModels(): string[] {
+    const configured = OPENROUTER_MODEL.split(",").map((m) => m.trim()).filter(Boolean);
+    // Keep the configured models first, then any fallback not already listed.
+    return [...configured, ...OPENROUTER_FALLBACKS.filter((m) => !configured.includes(m))];
+}
+
+async function callOpenRouterModel(
+    model: string,
+    prompt: string,
+    systemRole: string
+): Promise<string> {
     const response = await fetch(OPENROUTER_API_URL, {
         method: "POST",
         headers: {
@@ -242,7 +261,7 @@ async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a
             "X-Title": "MonadStudio"
         },
         body: JSON.stringify({
-            model: OPENROUTER_MODEL,
+            model,
             messages: [
                 { role: "system", content: systemRole },
                 { role: "user", content: prompt }
@@ -253,15 +272,34 @@ async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a
     });
 
     if (!response.ok) {
-        const err = await response.text();
-        console.error("❌ OpenRouter API error:", err);
-        throw new Error(`OpenRouter API error: ${response.status} - ${err}`);
+        throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error("OpenRouter returned an empty completion");
+    // Reasoning models can spend the whole budget on reasoning and return nothing.
+    if (!content) throw new Error("empty completion");
     return content;
+}
+
+async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a helpful AI assistant."): Promise<string> {
+    if (!OPENROUTER_API_KEY) throw new Error("OpenRouter API key not configured");
+
+    const models = openRouterModels();
+    const failures: string[] = [];
+
+    for (const model of models) {
+        try {
+            console.log(`🤖 Calling OpenRouter (${model})...`);
+            return await callOpenRouterModel(model, prompt, systemRole);
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            console.warn(`⚠️ OpenRouter model ${model} failed: ${reason}`);
+            failures.push(`${model}: ${reason}`);
+        }
+    }
+
+    throw new Error(`All OpenRouter models failed. ${failures.join(" | ")}`);
 }
 
 // --- GROQ API HELPER (Fast Fallback) ---

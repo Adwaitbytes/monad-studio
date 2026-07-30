@@ -51,6 +51,7 @@ import { useHydrated } from "@/lib/useHydrated";
 import type { QuickActionType } from "@/lib/supabase";
 import { ParallelProfiler } from "./components/ParallelProfiler";
 import { MigrationWizard } from "./components/MigrationWizard";
+import { Markdown } from "./components/Markdown";
 import { generateFromTemplate, ARCHITECT_TO_TEMPLATE, CONTRACT_TEMPLATES } from "@/lib/contractTemplates";
 import { analytics } from "@/lib/supabase";
 import { createPaymentHeader } from "@/utils/q402";
@@ -2463,7 +2464,11 @@ Be concise but thorough. Format your response with markdown for readability.`;
                                       : "bg-gray-50 border border-gray-200"
                                 }`}
                               >
-                                <div className="whitespace-pre-wrap text-xs">{msg.content}</div>
+                                {msg.role === "assistant" ? (
+                                  <Markdown content={msg.content} isDark={isDark} />
+                                ) : (
+                                  <div className="whitespace-pre-wrap text-xs">{msg.content}</div>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -2507,7 +2512,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
                                   <X size={12} />
                                 </button>
                               </div>
-                              <div className="whitespace-pre-wrap text-xs leading-relaxed">{aiResponse}</div>
+                              <Markdown content={aiResponse} isDark={isDark} />
                             </div>
                           )}
 
@@ -2830,7 +2835,11 @@ Be concise but thorough. Format your response with markdown for readability.`;
                                     : "bg-gray-50 border border-gray-200"
                               }`}
                             >
-                              <div className="whitespace-pre-wrap text-xs">{msg.content}</div>
+                              {msg.role === "assistant" ? (
+                                <Markdown content={msg.content} isDark={isDark} />
+                              ) : (
+                                <div className="whitespace-pre-wrap text-xs">{msg.content}</div>
+                              )}
                             </div>
                           </div>
                         ))}

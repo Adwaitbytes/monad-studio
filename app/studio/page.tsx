@@ -55,12 +55,14 @@ import { generateFromTemplate, ARCHITECT_TO_TEMPLATE, CONTRACT_TEMPLATES } from 
 import { analytics } from "@/lib/supabase";
 import { createPaymentHeader } from "@/utils/q402";
 import { getEthereumProvider } from "@/lib/ethereum";
+import { deployFromWallet } from "@/lib/deploy";
+import type { Abi } from "viem";
 import {
   errorMessage,
+  readJson,
   type AgentTextResponse,
   type CompileResponse,
   type CompilerDiagnostic,
-  type DeployResponse,
   type ExplainErrorResponse,
   type PaymentChallenge,
   type PymonAuditResponse,
@@ -1002,7 +1004,7 @@ export default function StudioPage() {
           }),
         });
 
-        const transpileResult: TranspileResponse = await transpileRes.json();
+        const transpileResult = await readJson<TranspileResponse>(transpileRes);
 
         if (!transpileResult.success) {
           addConsoleOutput(`❌ Transpilation failed: ${transpileResult.error}`);
@@ -1039,7 +1041,7 @@ export default function StudioPage() {
 
         // Handle payment if required
         if (res.status === 402) {
-          const data: PaymentChallenge = await res.json();
+          const data = await readJson<PaymentChallenge>(res);
           addConsoleOutput("💳 Signature required for compilation...");
           const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
 
@@ -1057,7 +1059,7 @@ export default function StudioPage() {
           });
         }
 
-        const result: CompileResponse = await res.json();
+        const result = await readJson<CompileResponse>(res);
         const compileTime = Date.now() - startTime;
 
         if (result.success) {
@@ -1097,7 +1099,7 @@ export default function StudioPage() {
 
       // Handle payment if required
       if (res.status === 402) {
-        const data: PaymentChallenge = await res.json();
+        const data = await readJson<PaymentChallenge>(res);
         addConsoleOutput("💳 Signature required for compilation...");
         const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
         
@@ -1115,7 +1117,7 @@ export default function StudioPage() {
         });
       }
 
-      const result: CompileResponse = await res.json();
+      const result = await readJson<CompileResponse>(res);
       const compileTime = Date.now() - startTime;
 
       if (result.success) {
@@ -1189,7 +1191,7 @@ export default function StudioPage() {
         }),
       });
 
-      const data: ExplainErrorResponse = await res.json();
+      const data = await readJson<ExplainErrorResponse>(res);
       if (data.success && data.explanation) {
         setAIResponse(data.explanation);
         setTeachModeContent(data.teachMode ?? null);
@@ -1208,72 +1210,45 @@ export default function StudioPage() {
       addConsoleOutput("⚠️ Please compile successfully first");
       return;
     }
+    if (!walletAddress) {
+      addConsoleOutput("⚠️ Connect a wallet to deploy");
+      return;
+    }
+    if (!compileResult.abi || !compileResult.bytecode) {
+      addConsoleOutput("⚠️ Compile output is missing the ABI or bytecode. Compile again.");
+      return;
+    }
 
     setDeploying(true);
-
-    // For Python contracts, use the transpiled Solidity
-    const deployCode = language === "python" && transpilledSolidity ? transpilledSolidity : code;
-
-    addConsoleOutput(`🚀 Deploying ${language === "python" ? "Python" : "Solidity"} contract to Monad ${network}...`);
+    addConsoleOutput(`🚀 Deploying ${language === "python" ? "Python" : "Solidity"} contract to Monad testnet...`);
+    addConsoleOutput("🔑 Confirm the transaction in your wallet...");
 
     try {
-      let res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "deploy",
-          userAddress: walletAddress,
-          network,
-          code: deployCode,
-        }),
-      });
+      const result = await deployFromWallet(
+        compileResult.abi as Abi,
+        compileResult.bytecode,
+        walletAddress as `0x${string}`
+      );
 
-      if (res.status === 402) {
-        const data: PaymentChallenge = await res.json();
-        addConsoleOutput("💳 Signature required for deployment...");
-        const xPaymentHeader = await createPaymentHeader(walletAddress!, data.paymentDetails);
+      addConsoleOutput(`✅ Contract deployed!`);
+      addConsoleOutput(`📍 Address: ${result.address}`);
+      addConsoleOutput(`🔗 TX: ${result.txHash}`);
+      addConsoleOutput(`🔎 ${result.explorerUrl}`);
+      setDeployedAddress(result.address);
+      setShowDeployModal(true);
 
-        res = await fetch("/api/agent", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-PAYMENT": xPaymentHeader,
-          },
-          body: JSON.stringify({
-            action: "deploy",
-            userAddress: walletAddress,
-            network,
-            code: deployCode,
-          }),
+      if (userUUID) {
+        analytics.trackDeployment({
+          userId: userUUID,
+          contractAddress: result.address,
+          network: "testnet",
+          transactionHash: result.txHash,
+          deployerAddress: walletAddress,
+          gasUsed: result.gasUsed ? Number(result.gasUsed) : undefined,
         });
       }
-
-      const result: DeployResponse = await res.json();
-
-      if (result.success && result.address && result.txHash) {
-        const { address, txHash } = result;
-        addConsoleOutput(`✅ Contract deployed!`);
-        addConsoleOutput(`📍 Address: ${address}`);
-        addConsoleOutput(`🔗 TX: ${txHash}`);
-        setDeployedAddress(address);
-        setShowDeployModal(true);
-
-        // Track deployment
-        if (userUUID) {
-          analytics.trackDeployment({
-            userId: userUUID,
-            contractAddress: address,
-            network: network as "testnet" | "mainnet",
-            transactionHash: txHash,
-            deployerAddress: walletAddress!,
-          });
-          console.log('✅ Deployment tracked');
-        }
-      } else {
-        addConsoleOutput(`❌ Deployment failed: ${result.error}`);
-      }
     } catch (err) {
-      addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
+      addConsoleOutput(`❌ Deployment failed: ${errorMessage(err)}`);
     } finally {
       setDeploying(false);
     }
@@ -1316,7 +1291,7 @@ export default function StudioPage() {
         }),
       });
 
-      const result: PymonAuditResponse = await res.json();
+      const result = await readJson<PymonAuditResponse>(res);
 
       if (result.success) {
         addConsoleOutput(`📊 Security Score: ${result.score}/100 (${result.riskLevel})`);
@@ -1357,7 +1332,7 @@ export default function StudioPage() {
         body: JSON.stringify({ code }),
       });
 
-      const result: SecurityAuditResponse = await res.json();
+      const result = await readJson<SecurityAuditResponse>(res);
 
       if (!result.success || !result.analysis) {
         addConsoleOutput(`❌ Audit failed: ${result.error ?? "Unknown error"}`);
@@ -1569,7 +1544,7 @@ Look for:
         }),
       });
 
-      const result: AgentTextResponse = await res.json();
+      const result = await readJson<AgentTextResponse>(res);
 
       if (result.success) {
         const response = result.answer || result.response || "Analysis complete";
@@ -1742,7 +1717,7 @@ NO markdown, NO explanations, NO code blocks.`;
           }),
         });
 
-        const result: AgentTextResponse = await res.json();
+        const result = await readJson<AgentTextResponse>(res);
 
         if (!result.success || !result.code) {
           throw new Error(result.error || "AI generation failed");
@@ -1867,7 +1842,7 @@ NO markdown, NO explanations, NO code blocks, JUST THE CODE.`;
         }),
       });
 
-      const result: AgentTextResponse = await res.json();
+      const result = await readJson<AgentTextResponse>(res);
 
       if (!result.success || !result.code) {
         throw new Error(result.error || "Generation failed");
@@ -1991,7 +1966,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
         }),
       });
 
-      const result: AgentTextResponse = await res.json();
+      const result = await readJson<AgentTextResponse>(res);
 
       if (result.success) {
         const answer = result.answer || result.response || "I couldn't find specific information about that.";

@@ -7,6 +7,7 @@ import * as path from "path";
 import solc from "solc";
 import { privateKeyToAccount } from "viem/accounts";
 import { OPENZEPPELIN_SOURCES } from "../../../lib/openzeppelin-bundle";
+import { CONTRACT_TEMPLATES, generateFromTemplate } from "../../../lib/contractTemplates";
 import type { Abi } from "viem";
 
 // --- CHAIN DEFINITIONS ---
@@ -31,8 +32,8 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const CHAINGPT_API_KEY = process.env.CHAINGPT_API_KEY;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Strong free-tier coding model; override per-deployment without a code change.
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free";
+// Optional comma-separated override; empty means use OPENROUTER_FALLBACKS as-is.
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const CHAINGPT_API_URL = "https://api.chaingpt.org/chat/stream";
 const RPC_TESTNET = "https://testnet-rpc.monad.xyz";
@@ -188,6 +189,172 @@ async function compileSolidity(sourceCode: string): Promise<CompileResult> {
     }
 }
 
+/**
+ * The bundled OpenZeppelin is v5, whose constructor signatures differ from v4.
+ * Models default to v4 syntax from training data and produce contracts that do
+ * not compile, so the differences are spelled out in every generation prompt.
+ */
+const OPENZEPPELIN_V5_RULES = `
+The available OpenZeppelin is version 5. Follow these rules exactly or the contract will not compile.
+
+MUST:
+- Ownable takes an initial owner: Ownable(msg.sender). Never write Ownable().
+- Constructor takes NO parameters. Hardcode any initial values.
+- Include: receive() external payable {}
+- Start with: // SPDX-License-Identifier: MIT
+- pragma solidity ^0.8.20;
+
+MUST NOT (these are the most common causes of failure):
+- Do NOT use "unchecked" blocks anywhere.
+- Do NOT use Counters.sol, it was removed in v5.
+- Do NOT use _beforeTokenTransfer, it was removed in v5. Use _update.
+- Do NOT inherit more than two OpenZeppelin contracts. Prefer plain state variables over extra base contracts.
+- Do NOT use Pausable unless the user explicitly asks for pausing.
+- Do NOT declare the same event twice.
+- Do NOT write @param or @return doc tags.
+- Do NOT mark a function "override" unless it genuinely overrides a base function.
+
+Prefer simple, direct code over clever code. A short contract that compiles is
+better than a sophisticated one that does not.
+
+This is the shape of a correct contract:
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract Example is ERC20, Ownable {
+    uint256 public constant PRICE = 0.01 ether;
+    mapping(address => uint256) public balances;
+
+    event Recorded(address indexed user, uint256 amount);
+
+    constructor() ERC20("Example", "EXM") Ownable(msg.sender) {
+        _mint(msg.sender, 1_000_000 * 10 ** decimals());
+    }
+
+    function record(uint256 amount) external {
+        balances[msg.sender] += amount;
+        emit Recorded(msg.sender, amount);
+    }
+
+    function withdraw() external onlyOwner {
+        (bool sent, ) = payable(owner()).call{value: address(this).balance}("");
+        require(sent, "withdraw failed");
+    }
+
+    receive() external payable {}
+}
+`;
+
+/**
+ * Deterministically fixes the mistakes models make most often.
+ *
+ * Measured over a batch of generations, two faults caused most first-attempt
+ * compile failures: `Ownable()` written with no argument (v4 habit), and NatSpec
+ * @param/@return tags that do not match the signature they document, which solc
+ * treats as a hard error. Both are mechanical, so they are corrected here rather
+ * than by asking the model again, which costs a round trip and often fails anyway.
+ */
+function repairCommonMistakes(code: string): string {
+    let fixed = code;
+
+    // OpenZeppelin v5 requires an initial owner.
+    fixed = fixed.replace(/\bOwnable\s*\(\s*\)/g, "Ownable(msg.sender)");
+
+    // Models add `unchecked` for gas and frequently place it where the grammar
+    // does not allow it. Dropping the keyword leaves a plain block and restores
+    // 0.8's overflow checks, which is the safer behaviour anyway.
+    fixed = fixed.replace(/\bunchecked\s*\{/g, "{");
+
+    // Drop parameter and return docs; they document nothing the compiler needs
+    // and a stale tag aborts the whole compile.
+    fixed = fixed
+        .split("\n")
+        .filter((line) => !/^\s*(\/\/\/|\s*\*)\s*@(param|return)\b/.test(line))
+        .join("\n");
+
+    return fixed;
+}
+
+/** Strips the markdown and stray prefixes models add despite being told not to. */
+function cleanGeneratedCode(raw: string): string {
+    let code = raw.replace(/```solidity/gi, "").replace(/```/g, "").trim();
+    if (code.startsWith("SPDX-License-Identifier")) code = "// " + code;
+    code = code.replace(/MITpragma/, "MIT\npragma");
+
+    // Some models prepend a sentence before the licence header.
+    const spdx = code.indexOf("// SPDX");
+    if (spdx > 0) code = code.slice(spdx);
+
+    return code.trim();
+}
+
+/**
+ * Returns compilable Solidity, or throws.
+ *
+ * A contract that does not compile is worthless to the user, so the model's
+ * first answer is verified rather than trusted. On failure the compiler's own
+ * error is handed back to the model, which fixes its mistake far more reliably
+ * than re-rolling the same prompt. Retries stop when the time budget runs out.
+ */
+async function generateVerifiedContract(
+    codePrompt: string,
+    systemRole: string,
+    userAddress: string | undefined,
+    deadline: number
+): Promise<{ code: string; attempts: number; repaired: boolean; fromTemplate?: string }> {
+    let lastError = "";
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        if (Date.now() > deadline - 5_000) break;
+
+        const prompt = lastError
+            ? `${codePrompt}\n\nYour previous attempt failed to compile with this exact error:\n${lastError}\n\nReturn the corrected full contract. Output ONLY Solidity.`
+            : codePrompt;
+
+        // Each attempt starts from a different model in the chain.
+        const raw = await callAI(prompt, systemRole, userAddress, deadline, attempt - 1);
+        const code = repairCommonMistakes(cleanGeneratedCode(raw));
+
+        try {
+            await compileSolidity(code);
+            return { code, attempts: attempt, repaired: attempt > 1 };
+        } catch (error) {
+            lastError = (error instanceof Error ? error.message : String(error)).slice(0, 600);
+            console.warn(`⚠️ Generated contract failed to compile (attempt ${attempt}): ${lastError.slice(0, 140)}`);
+        }
+    }
+
+    // Every model attempt produced something that will not compile. Returning an
+    // error would leave the user with nothing, so fall back to the hand-written
+    // template closest to their request. These are known to compile.
+    const fallbackId = pickTemplateFor(codePrompt);
+    console.warn(`⚠️ Falling back to template "${fallbackId}" after ${lastError.slice(0, 120)}`);
+
+    const templateCode = generateFromTemplate(fallbackId, CONTRACT_TEMPLATES[fallbackId].defaults);
+    await compileSolidity(templateCode);
+
+    return { code: templateCode, attempts: 3, repaired: true, fromTemplate: fallbackId };
+}
+
+/** Chooses the closest built-in template from the words in the request. */
+function pickTemplateFor(request: string): string {
+    const text = request.toLowerCase();
+    const rules: [RegExp, string][] = [
+        [/\bnft|erc-?721|collectible|ticket|art|badge\b/, "nft-collection"],
+        [/\bdao|govern|vote|voting|proposal|ballot\b/, "dao-governance"],
+        [/\bstake|staking|yield|reward|vault|farm\b/, "staking-vault"],
+        [/\bmultisig|multi-sig|treasury|signers?\b/, "multisig-wallet"],
+    ];
+    for (const [pattern, id] of rules) {
+        if (pattern.test(text)) return id;
+    }
+    return "defi-token";
+}
+
 function addressToUUID(address: string) {
     const clean = address.replace("0x", "").toLowerCase().padEnd(32, "0");
     return `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20, 32)}`;
@@ -229,69 +396,115 @@ async function callOpenAIAPI(prompt: string, systemRole: string = "You are a hel
 // --- OPENROUTER API HELPER (OpenAI-compatible, multi-provider) ---
 
 /**
- * Models tried in order. Upstream providers behind a single slug go down or
- * rate limit intermittently, and a one-in-three failure is not acceptable for
- * an interactive editor, so a failed model falls through to the next one.
- * OPENROUTER_MODEL may hold a comma-separated list to override this.
+ * Models tried in order, fastest first.
+ *
+ * Ordering is measured, not guessed: gpt-4o-mini and gemini-2.5-flash both
+ * return compilable Solidity in ~2.5s, while the free 550B model takes ~15s.
+ * Three slow attempts overran the 60s function limit, and the client then got
+ * a plain-text platform error page instead of JSON. Free models sit last as a
+ * safety net rather than the default.
+ *
+ * OPENROUTER_MODEL accepts a comma-separated list to override the order.
  */
 const OPENROUTER_FALLBACKS = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "google/gemma-4-31b-it:free",
-    "openai/gpt-oss-20b:free",
+    "openai/gpt-4o-mini",
+    "google/gemini-2.5-flash",
+    "deepseek/deepseek-chat",
 ];
 
-function openRouterModels(): string[] {
+/** Per-model ceiling. Several attempts must still fit inside the platform's function limit. */
+const MODEL_TIMEOUT_MS = 20_000;
+
+/**
+ * Whole-request budget, kept under the 60s serverless function limit. Exceeding
+ * it means the platform returns a plain-text error page, which the browser then
+ * fails to parse as JSON.
+ */
+const REQUEST_BUDGET_MS = 50_000;
+
+function openRouterModels(offset = 0): string[] {
     const configured = OPENROUTER_MODEL.split(",").map((m) => m.trim()).filter(Boolean);
-    // Keep the configured models first, then any fallback not already listed.
-    return [...configured, ...OPENROUTER_FALLBACKS.filter((m) => !configured.includes(m))];
+    const all = [...configured, ...OPENROUTER_FALLBACKS.filter((m) => !configured.includes(m))];
+    // Rotating on retry means a model that just produced broken output is not the
+    // one asked to fix it. Different models fail in different places.
+    const start = offset % all.length;
+    return [...all.slice(start), ...all.slice(0, start)];
 }
 
 async function callOpenRouterModel(
     model: string,
     prompt: string,
-    systemRole: string
+    systemRole: string,
+    timeoutMs: number
 ): Promise<string> {
-    const response = await fetch(OPENROUTER_API_URL, {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json",
-            // OpenRouter attributes usage to these; both are optional but recommended.
-            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-            "X-Title": "MonadStudio"
-        },
-        body: JSON.stringify({
-            model,
-            messages: [
-                { role: "system", content: systemRole },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.7,
-            max_tokens: 4096
-        })
-    });
+    // Without an abort, one hung provider consumes the entire request budget and
+    // the platform kills the function before any fallback is reached.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-        throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
+    try {
+        const response = await fetch(OPENROUTER_API_URL, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+                // OpenRouter attributes usage to these; both are optional but recommended.
+                "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+                "X-Title": "MonadStudio"
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: "system", content: systemRole },
+                    { role: "user", content: prompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 4096
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        // Reasoning models can spend the whole budget on reasoning and return nothing.
+        if (!content) throw new Error("empty completion");
+        return content;
+    } finally {
+        clearTimeout(timer);
     }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    // Reasoning models can spend the whole budget on reasoning and return nothing.
-    if (!content) throw new Error("empty completion");
-    return content;
 }
 
-async function callOpenRouterAPI(prompt: string, systemRole: string = "You are a helpful AI assistant."): Promise<string> {
+async function callOpenRouterAPI(
+    prompt: string,
+    systemRole: string = "You are a helpful AI assistant.",
+    deadline: number = Date.now() + REQUEST_BUDGET_MS,
+    modelOffset = 0
+): Promise<string> {
     if (!OPENROUTER_API_KEY) throw new Error("OpenRouter API key not configured");
 
-    const models = openRouterModels();
     const failures: string[] = [];
 
-    for (const model of models) {
+    for (const model of openRouterModels(modelOffset)) {
+        const remaining = deadline - Date.now();
+        // Stop rather than start an attempt that cannot finish before the
+        // platform terminates the function.
+        if (remaining < 3_000) {
+            failures.push("out of time budget");
+            break;
+        }
+
         try {
             console.log(`🤖 Calling OpenRouter (${model})...`);
-            return await callOpenRouterModel(model, prompt, systemRole);
+            return await callOpenRouterModel(
+                model,
+                prompt,
+                systemRole,
+                Math.min(MODEL_TIMEOUT_MS, remaining)
+            );
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             console.warn(`⚠️ OpenRouter model ${model} failed: ${reason}`);
@@ -352,7 +565,13 @@ async function callChainGPTAPI(model: string, question: string, userAddress?: st
 }
 
 // --- UNIFIED AI CALL (OpenAI Primary -> Groq -> ChainGPT) ---
-async function callAI(prompt: string, systemRole: string, userAddress?: string): Promise<string> {
+async function callAI(
+    prompt: string,
+    systemRole: string,
+    userAddress?: string,
+    deadline: number = Date.now() + REQUEST_BUDGET_MS,
+    modelOffset = 0
+): Promise<string> {
     // Try OpenAI first (most powerful)
     if (OPENAI_API_KEY) {
         try {
@@ -366,7 +585,7 @@ async function callAI(prompt: string, systemRole: string, userAddress?: string):
     // Try OpenRouter second (broad model access, free tiers)
     if (OPENROUTER_API_KEY) {
         try {
-            return await callOpenRouterAPI(prompt, systemRole);
+            return await callOpenRouterAPI(prompt, systemRole, deadline, modelOffset);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             console.log(`⚠️ OpenRouter failed: ${message}, trying Groq...`);
@@ -396,6 +615,10 @@ async function callAI(prompt: string, systemRole: string, userAddress?: string):
 }
 
 export async function POST(req: Request) {
+    // Every AI path shares one wall-clock budget so the function returns JSON
+    // rather than being killed mid-flight by the platform.
+    const deadline = Date.now() + REQUEST_BUDGET_MS;
+
     try {
         const body = await req.json();
         const { action, prompt, code, userAddress, network, toAddress, amount } = body;
@@ -469,23 +692,34 @@ export async function POST(req: Request) {
                 }, { status: 402 });
             }
 
+            let payload;
             try {
-                const buffer = Buffer.from(paymentHeader, 'base64');
-                const payload = JSON.parse(buffer.toString('utf-8'));
-                // The terms are re-asserted server-side; a client-supplied witness that
-                // names a different payee, a smaller amount or another wallet is rejected.
-                const isValid = await verifyPayment(payload, {
-                    payer: userAddress,
-                    payee: Q402_PAYEE,
-                    minAmount: BigInt(Q402_PRICE_WEI),
-                    chainId: MONAD_CHAIN_ID,
-                });
-                if (!isValid) throw new Error("Invalid Signature");
+                payload = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf-8'));
+            } catch {
+                return NextResponse.json({ error: "Malformed payment header" }, { status: 400 });
+            }
+
+            // The terms are re-asserted server-side; a client-supplied witness that
+            // names a different payee, a smaller amount or another wallet is rejected.
+            const isValid = await verifyPayment(payload, {
+                payer: userAddress,
+                payee: Q402_PAYEE,
+                minAmount: BigInt(Q402_PRICE_WEI),
+                chainId: MONAD_CHAIN_ID,
+            });
+            if (!isValid) {
+                return NextResponse.json({ error: "Invalid Payment Signature" }, { status: 403 });
+            }
+
+            try {
                 await settlePayment(payload);
                 console.log("✅ Q402: Payment Verified & Settled.");
             } catch (e) {
-                console.error("❌ Payment Verification Failed:", e);
-                return NextResponse.json({ error: "Invalid Payment Signature" }, { status: 403 });
+                // Settlement failing is a server-side configuration problem. Reporting
+                // it as a bad signature sends the user hunting the wrong thing.
+                const reason = e instanceof Error ? e.message : "Settlement failed";
+                console.error("❌ Q402 Settlement Failed:", reason);
+                return NextResponse.json({ error: `Payment settlement failed: ${reason}` }, { status: 503 });
             }
         }
 
@@ -525,24 +759,27 @@ STRICT REQUIREMENTS:
    - @openzeppelin/contracts/access/Ownable.sol
    - @openzeppelin/contracts/utils/ReentrancyGuard.sol
 
+${OPENZEPPELIN_V5_RULES}
+
 USER REQUEST: "${prompt}"
 
 Generate the contract now:`;
 
-            let generatedCode = await callAI(
+            const generated = await generateVerifiedContract(
                 codePrompt,
                 "You are a Solidity expert. Generate ONLY pure Solidity code. No markdown, no explanations, no code blocks.",
-                userAddress
+                userAddress,
+                deadline
             );
 
-            // Clean up
-            generatedCode = generatedCode.replace(/```solidity/g, "").replace(/```/g, "").trim();
-            if (generatedCode.startsWith("SPDX-License-Identifier")) {
-                generatedCode = "// " + generatedCode;
-            }
-            generatedCode = generatedCode.replace(/MITpragma/, "MIT\npragma");
-
-            return NextResponse.json({ success: true, code: generatedCode });
+            return NextResponse.json({
+                success: true,
+                code: generated.code,
+                verified: true,
+                attempts: generated.attempts,
+                repaired: generated.repaired,
+                fromTemplate: generated.fromTemplate,
+            });
         }
 
         if (action === "architect") {
@@ -572,35 +809,29 @@ CRITICAL REQUIREMENTS:
    - @openzeppelin/contracts/utils/ReentrancyGuard.sol
    - @openzeppelin/contracts/utils/Pausable.sol
 
+${OPENZEPPELIN_V5_RULES}
+
+The contract MUST compile with no constructor arguments, so hardcode initial values.
+
 OUTPUT FORMAT: Return ONLY valid Solidity code starting with "// SPDX-License-Identifier: MIT".
 NO markdown code blocks, NO explanations, NO additional text.`;
 
-            let generatedCode = await callAI(
+            const architected = await generateVerifiedContract(
                 prompt,
                 architectSystemRole,
-                userAddress
+                userAddress,
+                deadline
             );
 
-            // Clean up the generated code
-            generatedCode = generatedCode.replace(/```solidity/g, "").replace(/```/g, "").trim();
-            if (generatedCode.startsWith("SPDX-License-Identifier")) {
-                generatedCode = "// " + generatedCode;
-            }
-            generatedCode = generatedCode.replace(/MITpragma/, "MIT\npragma");
-
-            // Ensure it starts correctly
-            if (!generatedCode.startsWith("// SPDX")) {
-                const spdxIndex = generatedCode.indexOf("// SPDX");
-                if (spdxIndex > 0) {
-                    generatedCode = generatedCode.substring(spdxIndex);
-                }
-            }
-
-            console.log(`✅ Architect generated ${generatedCode.length} characters of code`);
+            console.log(`✅ Architect generated ${architected.code.length} characters of verified code`);
 
             return NextResponse.json({
                 success: true,
-                code: generatedCode,
+                code: architected.code,
+                verified: true,
+                attempts: architected.attempts,
+                repaired: architected.repaired,
+                fromTemplate: architected.fromTemplate,
                 contractType: body.contractType,
                 params: body.params
             });

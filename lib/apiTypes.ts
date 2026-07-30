@@ -122,6 +122,31 @@ export interface PaymentChallenge {
   };
 }
 
+/**
+ * Parses a response that is *supposed* to be JSON.
+ *
+ * A serverless function that times out or crashes returns an HTML or plain-text
+ * page from the platform, and calling .json() on that throws a parse error that
+ * surfaces to the user as `Unexpected token 'A'`. This turns those into a real
+ * message instead.
+ */
+export async function readJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const snippet = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+    if (res.status === 504 || /timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(text)) {
+      throw new Error("The request took too long and timed out. Try a shorter prompt.");
+    }
+    throw new Error(
+      snippet
+        ? `Server error (${res.status}): ${snippet}`
+        : `Server returned ${res.status} with no readable body.`
+    );
+  }
+}
+
 /** Narrows an unknown thrown value to a displayable message. */
 export function errorMessage(error: unknown, fallback = "Unexpected error"): string {
   if (error instanceof Error) return error.message;

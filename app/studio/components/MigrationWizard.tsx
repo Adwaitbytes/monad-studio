@@ -6,7 +6,7 @@ import type { CodeChange } from '@/lib/migrationTool';
 
 type WizardStep = 'input' | 'analyzing' | 'results' | 'diff';
 type InputMode = 'address' | 'code';
-type NetworkType = 'ethereum' | 'sepolia';
+type NetworkType = 'ethereum' | 'sepolia' | 'monad-testnet' | 'monad-mainnet';
 
 interface MigrationResult {
   contract: {
@@ -16,6 +16,10 @@ interface MigrationResult {
     sourceCode: string;
     compiler: string;
     isVerified: boolean;
+    sourceProvider?: string;
+    fileCount?: number;
+    isProxy?: boolean;
+    implementationAddress?: string;
   };
   analysis: {
     compatibilityScore: number;
@@ -56,9 +60,9 @@ interface MigrationWizardProps {
 
 export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps) {
   const [step, setStep] = useState<WizardStep>('input');
-  // Defaults to pasting source because that path needs no third-party key.
-  // Importing by address requires ETHERSCAN_API_KEY, which is optional config.
-  const [inputMode, setInputMode] = useState<InputMode>('code');
+  // Address import resolves through Sourcify and Blockscout, so it needs no API
+  // key and is the faster path for the common case of an already-verified contract.
+  const [inputMode, setInputMode] = useState<InputMode>('address');
   const [network, setNetwork] = useState<NetworkType>('ethereum');
   const [address, setAddress] = useState('');
   const [pastedCode, setPastedCode] = useState('');
@@ -103,7 +107,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
       await new Promise(r => setTimeout(r, 200));
 
       if (inputMode === 'address') {
-        setProgressText('Fetching contract from Etherscan...');
+        setProgressText('Looking up verified source...');
         setProgress(30);
       } else {
         setProgressText('Parsing contract code...');
@@ -251,6 +255,8 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                   >
                     <option value="ethereum">Ethereum Mainnet</option>
                     <option value="sepolia">Sepolia Testnet</option>
+                    <option value="monad-testnet">Monad Testnet</option>
+                    <option value="monad-mainnet">Monad Mainnet</option>
                   </select>
                 </div>
 
@@ -266,7 +272,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                     className="w-full px-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Enter a verified contract address from Etherscan
+                    Any contract verified on Sourcify, Blockscout or Etherscan. No API key needed.
                   </p>
                 </div>
               </div>
@@ -308,7 +314,7 @@ contract MyContract {
               <ul className="space-y-1 text-sm text-gray-400">
                 <li className="flex items-center gap-2">
                   <span className="text-blue-400">1.</span>
-                  Fetch verified source code from Etherscan
+                  Fetch verified source from Sourcify or Blockscout
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-blue-400">2.</span>
@@ -388,7 +394,16 @@ contract MyContract {
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   Compiler: {result.contract.compiler}
+                  {result.contract.sourceProvider && ` · via ${result.contract.sourceProvider}`}
+                  {result.contract.fileCount && result.contract.fileCount > 1 &&
+                    ` · ${result.contract.fileCount} files`}
                 </p>
+                {result.contract.isProxy && result.contract.implementationAddress && (
+                  <p className="mt-1 text-xs text-yellow-500/90">
+                    Proxy contract. The logic lives at {result.contract.implementationAddress} —
+                    import that address to analyze the implementation.
+                  </p>
+                )}
               </div>
 
               {/* Scores */}

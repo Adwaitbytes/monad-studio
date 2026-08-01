@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeSync } from "./ThemeSync";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -30,10 +31,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
+      <head>
+        {/*
+          Applied before paint so a reload does not flash the wrong theme.
+          Reads the same localStorage key the zustand store persists to.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem('monadstudio-theme');var t=s?JSON.parse(s).state.theme:'dark';document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased font-sans`}
       >
+        <ThemeSync />
         {children}
       </body>
     </html>

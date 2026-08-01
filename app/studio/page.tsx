@@ -48,6 +48,8 @@ import {
 import Link from "next/link";
 import { useThemeStore, useUserStore, useProjectStore, useIDEStore } from "@/lib/store";
 import { useHydrated } from "@/lib/useHydrated";
+import { useResizable } from "@/lib/useResizable";
+import { ResizeHandle } from "./components/ResizeHandle";
 import type { QuickActionType } from "@/lib/supabase";
 import { ParallelProfiler } from "./components/ParallelProfiler";
 import { MigrationWizard } from "./components/MigrationWizard";
@@ -76,7 +78,7 @@ import {
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-[#1e1e1e]">
+    <div className="w-full h-full flex items-center justify-center panel-sunken">
       <Loader2 className="animate-spin text-purple-500" size={32} />
     </div>
   ),
@@ -899,6 +901,13 @@ export default function StudioPage() {
   const [researchLoading, setResearchLoading] = useState(false);
 
   const isDark = theme === "dark";
+
+  // Docked panels are drag-resizable; sizes persist per panel.
+  const sidebarResize = useResizable({ initial: 200, min: 160, max: 420, edge: "right", storageKey: "ms.w.sidebar" });
+  const aiResize = useResizable({ initial: 380, min: 300, max: 720, edge: "left", storageKey: "ms.w.ai" });
+  const profilerResize = useResizable({ initial: 500, min: 360, max: 900, edge: "left", storageKey: "ms.w.profiler" });
+  const migrationResize = useResizable({ initial: 450, min: 360, max: 860, edge: "left", storageKey: "ms.w.migration" });
+  const terminalResize = useResizable({ initial: 180, min: 90, max: 520, edge: "top", storageKey: "ms.h.terminal" });
 
   /**
    * The AI assistant, profiler and migration wizard all dock to the right of the
@@ -2163,7 +2172,11 @@ Be concise but thorough. Format your response with markdown for readability.`;
           {!isConnected ? (
             <motion.button
               onClick={connectWallet}
-              className="px-4 py-1.5 bg-white text-black rounded-lg text-xs font-medium hover:bg-gray-200"
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                isDark
+                  ? "bg-white text-black hover:bg-gray-200"
+                  : "bg-gray-900 text-white hover:bg-gray-700"
+              }`}
               whileTap={{ scale: 0.98 }}
             >
               Connect Wallet
@@ -2203,9 +2216,10 @@ Be concise but thorough. Format your response with markdown for readability.`;
           {sidebarOpen && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 200, opacity: 1 }}
+              animate={{ width: sidebarResize.size, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className={`border-r flex flex-col min-w-0 max-w-[200px] flex-shrink-0 overflow-hidden ${isDark ? "bg-[#111116] border-white/5" : "bg-white border-gray-200"}`}
+              style={{ width: sidebarResize.size }}
+              className={`border-r flex flex-col min-w-0 flex-shrink-0 overflow-hidden ${"panel-surface border"}`}
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -2319,6 +2333,16 @@ Be concise but thorough. Format your response with markdown for readability.`;
           )}
         </AnimatePresence>
 
+        {sidebarOpen && (
+          <ResizeHandle
+            edge="right"
+            label="Resize explorer"
+            isDragging={sidebarResize.isDragging}
+            onPointerDown={sidebarResize.onPointerDown}
+            onReset={sidebarResize.reset}
+          />
+        )}
+
         {/* Editor Area — min-width keeps the code readable when a side panel opens */}
         <div className="flex-1 flex flex-col min-w-[320px] overflow-hidden">
           {/* Monaco Editor */}
@@ -2347,8 +2371,18 @@ Be concise but thorough. Format your response with markdown for readability.`;
           {/* Terminal */}
           {terminalOpen && (
             <div
-              className={`h-[180px] flex-shrink-0 border-t ${isDark ? "bg-[#0a0a0f] border-white/5" : "bg-gray-900 border-gray-700"}`}
+              style={{ height: terminalResize.size }}
+              className="flex-shrink-0 border-t border-border-subtle terminal-surface relative"
             >
+              <div className="absolute -top-[3px] inset-x-0">
+                <ResizeHandle
+                  edge="top"
+                  label="Resize terminal"
+                  isDragging={terminalResize.isDragging}
+                  onPointerDown={terminalResize.onPointerDown}
+                  onReset={terminalResize.reset}
+                />
+              </div>
               <div className="h-8 px-4 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-2">
                   <Terminal size={14} className="text-green-500" />
@@ -2382,13 +2416,23 @@ Be concise but thorough. Format your response with markdown for readability.`;
         </div>
 
         {/* AI Panel - Dual Mode */}
+        {aiPanelOpen && (
+          <ResizeHandle
+              edge="left"
+              label="Resize AI panel"
+              isDragging={aiResize.isDragging}
+              onPointerDown={aiResize.onPointerDown}
+              onReset={aiResize.reset}
+            />
+        )}
         <AnimatePresence>
           {aiPanelOpen && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 380, opacity: 1 }}
+              animate={{ width: aiResize.size, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className={`border-l flex flex-col min-w-0 max-w-[380px] flex-shrink-0 overflow-hidden ${isDark ? "bg-[#111116] border-white/5" : "bg-white border-gray-200"}`}
+              style={{ width: aiResize.size }}
+              className={`border-l flex flex-col min-w-0 flex-shrink-0 overflow-hidden ${"panel-surface border"}`}
             >
               {/* Header with Mode Tabs */}
               <div className={`p-3 border-b ${isDark ? "border-white/5" : "border-gray-200"}`}>
@@ -2894,13 +2938,23 @@ Be concise but thorough. Format your response with markdown for readability.`;
         </AnimatePresence>
 
         {/* Parallel Execution Profiler Panel */}
+        {parallelProfilerOpen && (
+          <ResizeHandle
+              edge="left"
+              label="Resize profiler"
+              isDragging={profilerResize.isDragging}
+              onPointerDown={profilerResize.onPointerDown}
+              onReset={profilerResize.reset}
+            />
+        )}
         <AnimatePresence>
           {parallelProfilerOpen && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 500, opacity: 1 }}
+              animate={{ width: profilerResize.size, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className={`border-l flex flex-col min-w-0 max-w-[500px] flex-shrink-0 overflow-hidden ${isDark ? "bg-[#0d1117] border-white/5" : "bg-white border-gray-200"}`}
+              style={{ width: profilerResize.size }}
+              className={`border-l flex flex-col min-w-0 flex-shrink-0 overflow-hidden ${"panel-surface border"}`}
             >
               <ParallelProfiler
                 code={language === "python" ? (transpilledSolidity || code) : code}
@@ -2911,13 +2965,23 @@ Be concise but thorough. Format your response with markdown for readability.`;
         </AnimatePresence>
 
         {/* Migration Tool Panel */}
+        {migrationOpen && (
+          <ResizeHandle
+              edge="left"
+              label="Resize migration panel"
+              isDragging={migrationResize.isDragging}
+              onPointerDown={migrationResize.onPointerDown}
+              onReset={migrationResize.reset}
+            />
+        )}
         <AnimatePresence>
           {migrationOpen && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 450, opacity: 1 }}
+              animate={{ width: migrationResize.size, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              className={`border-l flex flex-col min-w-0 max-w-[450px] flex-shrink-0 overflow-hidden ${isDark ? "bg-[#0d1117] border-white/5" : "bg-white border-gray-200"}`}
+              style={{ width: migrationResize.size }}
+              className={`border-l flex flex-col min-w-0 flex-shrink-0 overflow-hidden ${"panel-surface border"}`}
             >
               <MigrationWizard
                 onImportCode={(importedCode, fileName) => {
@@ -2957,7 +3021,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`w-[480px] rounded-3xl p-8 ${isDark ? "bg-[#16161d]" : "bg-white"}`}
+              className={`w-[480px] rounded-3xl p-8 ${"panel-surface"}`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center">
@@ -3012,7 +3076,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className={`w-[400px] rounded-2xl p-6 ${isDark ? "bg-[#16161d]" : "bg-white"}`}
+              className={`w-[400px] rounded-2xl p-6 ${"panel-surface"}`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 mb-6">

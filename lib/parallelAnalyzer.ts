@@ -417,20 +417,44 @@ function generateSuggestions(
       type: 'storage_packing',
       priority: 'medium',
       title: 'Pack Storage Variables',
-      description: `${smallVars.length} small variables could be packed into fewer storage slots. Group variables like ${smallVars.slice(0, 3).map(v => v.name).join(', ')} together.`,
+      description: `${smallVars.length} small variables each occupy their own 32 byte slot. Declaring them adjacently lets the compiler pack them into one, which is both cheaper and one conflict point instead of several.`,
+      currentCode: smallVars.slice(0, 3).map(v => `${v.type} public ${v.name};   // slot ${v.slot}`).join('\n'),
+      suggestedCode:
+        `// Declared together, these share a single slot\n` +
+        smallVars.slice(0, 3).map(v => `${v.type} public ${v.name};`).join('\n'),
       gasImpact: 'Save ~2,100 gas per storage slot reduced'
     });
   }
 
-  // Suggestion: Batch operations for multiple writes
+  // Suggestion: Batch operations for multiple writes.
+  // A suggestion without code is just a complaint, so the before/after is built
+  // from the variables actually detected in the function.
   const multiWriteFuncs = functions.filter(f => f.writes.length > 2);
   for (const func of multiWriteFuncs) {
+    const written = func.writes.slice(0, 4);
+    const structName = `${func.name.charAt(0).toUpperCase()}${func.name.slice(1)}State`;
+
     suggestions.push({
       type: 'batch_operation',
       priority: 'high',
       title: `Batch Operations in ${func.name}()`,
-      description: `Function ${func.name} writes to ${func.writes.length} state variables. Consider batching these into a single struct update for parallel-friendly execution.`,
-      gasImpact: 'Reduce state conflicts, enable parallel execution'
+      description:
+        `${func.name} writes ${func.writes.length} separate state variables (${written.join(', ')}). ` +
+        `Monad's scheduler tracks conflicts per storage slot, so each independent write is another ` +
+        `chance to collide with a concurrent transaction. Grouping them into one struct means one ` +
+        `slot range to reserve instead of ${func.writes.length}.`,
+      currentCode:
+        written.map((name) => `${name} = new${name.charAt(0).toUpperCase()}${name.slice(1)};`).join('\n'),
+      suggestedCode:
+        `struct ${structName} {\n` +
+        written.map((name) => `    uint256 ${name};`).join('\n') +
+        `\n}\n\n` +
+        `${structName} private _state;\n\n` +
+        `// One write reserves one contiguous region instead of ${func.writes.length} slots\n` +
+        `_state = ${structName}({\n` +
+        written.map((name) => `    ${name}: new${name.charAt(0).toUpperCase()}${name.slice(1)}`).join(',\n') +
+        `\n});`,
+      gasImpact: `Fewer slot reservations, ${func.writes.length} conflict points reduced to 1`
     });
   }
 

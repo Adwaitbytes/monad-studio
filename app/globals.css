@@ -1,15 +1,88 @@
 @import "tailwindcss";
 
-:root {
-  --background: #fafafa;
-  --foreground: #171717;
+/*
+ * Bind Tailwind's `dark:` variant to the app's own theme toggle. By default v4
+ * resolves it from prefers-color-scheme, which would ignore the in-app switch
+ * and leave the two disagreeing.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Theme tokens.
+ *
+ * The studio used to pick colours with `isDark ? ... : ...` at every call site,
+ * which meant any panel whose author forgot the ternary stayed dark forever.
+ * Semantic tokens fix the whole surface at once and keep the two themes in
+ * step. `data-theme` is set on <html> by ThemeSync.
+ */
+:root,
+:root[data-theme="light"] {
+  --background: #f7f7fa;
+  --foreground: #16161d;
   --primary: #7c3aed;
   --primary-foreground: #ffffff;
+
+  /* Elevation: sunken < base < raised < overlay */
+  --surface-sunken: #eeeef3;
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+
+  --border-subtle: rgba(16, 16, 29, 0.08);
+  --border-strong: rgba(16, 16, 29, 0.14);
+
+  --text-primary: #16161d;
+  --text-secondary: #4a4a58;
+  --text-muted: #6e6e80;
+
+  /* The terminal keeps a dark canvas in both themes: it is a console, and
+     coloured log output is unreadable on white. It is tinted, not black. */
+  --terminal-bg: #1c1c26;
+  --terminal-text: #e6e6ef;
+
+  --scrollbar-thumb: rgba(16, 16, 29, 0.18);
+  --scrollbar-thumb-hover: rgba(16, 16, 29, 0.3);
+
+  --shadow-panel: 0 1px 2px rgba(16, 16, 29, 0.04), 0 8px 24px rgba(16, 16, 29, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --background: #0a0a0f;
+  --foreground: #f5f5fa;
+
+  --surface-sunken: #08080c;
+  --surface-base: #0d0d12;
+  --surface-raised: #16161d;
+  --surface-overlay: #1c1c26;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-primary: #f5f5fa;
+  --text-secondary: #b4b4c4;
+  --text-muted: #7e7e92;
+
+  --terminal-bg: #0a0a0f;
+  --terminal-text: #e6e6ef;
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-mono);
 }
@@ -31,12 +104,40 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Panels that dock beside the editor. Using tokens means a panel is themed
+   correctly whether or not its author remembered to branch on the theme. */
+@layer utilities {
+  .panel-surface {
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    border-color: var(--border-subtle);
+  }
+
+  .panel-sunken {
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
+
+  .panel-muted {
+    color: var(--text-muted);
+  }
+
+  .panel-secondary {
+    color: var(--text-secondary);
+  }
+
+  .terminal-surface {
+    background: var(--terminal-bg);
+    color: var(--terminal-text);
+  }
 }
 
 @layer utilities {

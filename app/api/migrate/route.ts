@@ -1,15 +1,17 @@
 /**
  * Contract Migration API Endpoint
  *
- * Fetches contracts from Ethereum/Sepolia, analyzes for Monad compatibility,
- * and provides optimized code with auto-fixes applied.
+ * Fetches verified contracts from Sourcify, Blockscout or Etherscan, analyzes
+ * them for Monad compatibility, and provides optimized code with auto-fixes.
  */
 
 import { NextResponse } from 'next/server';
 import {
   fetchContractSource,
   analyzeForMigration,
-  NetworkType,
+  ContractSourceError,
+  NETWORKS,
+  isNetworkType,
   MigrationResult,
 } from '@/lib/migrationTool';
 
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Address mode: fetch from Etherscan
+    // Address mode: resolve verified source from the explorer chain
     if (mode === 'address') {
       if (!address) {
         return NextResponse.json(
@@ -59,9 +61,12 @@ export async function POST(req: Request) {
       // 'mainnet' is accepted as a legacy alias for the Ethereum source chain.
       const network = rawNetwork === 'mainnet' ? 'ethereum' : rawNetwork;
 
-      if (!['ethereum', 'sepolia'].includes(network)) {
+      if (!isNetworkType(network)) {
         return NextResponse.json(
-          { success: false, error: 'Invalid network. Use "ethereum" or "sepolia".' },
+          {
+            success: false,
+            error: `Invalid network. Use one of: ${Object.keys(NETWORKS).join(', ')}.`,
+          },
           { status: 400 }
         );
       }
@@ -78,10 +83,10 @@ export async function POST(req: Request) {
       }
 
       try {
-        // Fetch contract source from Etherscan
+        // Sourcify first, then Blockscout, then Etherscan if a key is configured
         const contractInfo = await fetchContractSource(
           address,
-          network as NetworkType,
+          network,
           process.env.ETHERSCAN_API_KEY
         );
 
@@ -107,26 +112,18 @@ export async function POST(req: Request) {
           },
         });
       } catch (fetchError) {
-        const fetchMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
-        // Handle specific Etherscan errors
-        if (fetchMessage.includes('not verified')) {
+        if (fetchError instanceof ContractSourceError) {
+          const status = fetchError.failure === 'unavailable' ? 502 : 400;
           return NextResponse.json(
             {
               success: false,
-              error: 'Contract source code is not verified on Etherscan. Please paste the code directly.',
-              suggestion: 'Use "code" mode instead and paste the contract source code.',
+              error: fetchError.message,
+              suggestion:
+                fetchError.failure === 'not-verified'
+                  ? 'Use "code" mode instead and paste the contract source code.'
+                  : undefined,
             },
-            { status: 400 }
-          );
-        }
-
-        if (fetchMessage.includes('rate limit')) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: 'Etherscan API rate limit reached. Please try again in a few seconds.',
-            },
-            { status: 429 }
+            { status }
           );
         }
 
@@ -188,18 +185,20 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     name: 'Contract Migration API',
-    version: '1.0.0',
-    description: 'Fetch and analyze Ethereum contracts for Monad compatibility',
+    version: '1.1.0',
+    description: 'Fetch and analyze verified contracts for Monad compatibility',
+    sources: ['Sourcify (no API key)', 'Blockscout (no API key)', 'Etherscan (needs ETHERSCAN_API_KEY)'],
+    networks: Object.keys(NETWORKS),
     endpoints: {
       POST: {
         description: 'Analyze a contract for migration',
         modes: {
           address: {
-            description: 'Fetch contract from Etherscan by address',
+            description: 'Fetch verified contract source by address',
             parameters: {
               mode: '"address"',
               address: 'Contract address (0x...)',
-              network: '"ethereum" | "sepolia" (default: ethereum)',
+              network: `${Object.keys(NETWORKS).map((n) => `"${n}"`).join(' | ')} (default: ethereum)`,
               autoFix: 'boolean (default: true)',
             },
           },

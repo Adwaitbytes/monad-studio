@@ -7,17 +7,23 @@
  */
 
 import { analyzeParallelPotential } from './parallelAnalyzer';
+import type { FetchedContract, NetworkType } from './contractSources';
+
+// Source resolution lives in ./contractSources; re-exported here so the
+// migration surface stays a single import for callers.
+export {
+  fetchContractSource,
+  ContractSourceError,
+  NETWORKS,
+  isNetworkType,
+} from './contractSources';
+export type {
+  FetchedContract,
+  NetworkType,
+  ContractSourceFailure,
+} from './contractSources';
 
 // ============= TYPE DEFINITIONS =============
-
-/** One entry of Etherscan's multi-file `SourceCode` JSON blob. */
-interface EtherscanSource {
-  content: string;
-}
-
-/** Source chain the contract is imported FROM. Deliberately not called
- * 'mainnet': that string means Monad mainnet everywhere else in this codebase. */
-export type NetworkType = 'ethereum' | 'sepolia';
 
 export type IssueSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
@@ -45,20 +51,6 @@ export interface CodeChange {
   autoFixed: boolean;
 }
 
-export interface FetchedContract {
-  name: string;
-  address: string;
-  network: NetworkType;
-  sourceCode: string;
-  compiler: string;
-  optimizationUsed: boolean;
-  runs: number;
-  constructorArguments: string;
-  isVerified: boolean;
-  isProxy: boolean;
-  implementationAddress?: string;
-}
-
 export interface TransformResult {
   originalCode: string;
   migratedCode: string;
@@ -75,6 +67,11 @@ export interface MigrationResult {
     sourceCode: string;
     compiler: string;
     isVerified: boolean;
+    /** Present for address imports: which explorer answered, and how many files it returned. */
+    sourceProvider?: string;
+    fileCount?: number;
+    isProxy?: boolean;
+    implementationAddress?: string;
   };
   analysis: {
     compatibilityScore: number;
@@ -89,19 +86,6 @@ export interface MigrationResult {
     timestamp: string;
   };
 }
-
-// ============= NETWORK CONFIGURATION =============
-
-const EXPLORER_APIS: Record<NetworkType, { api: string; name: string }> = {
-  ethereum: {
-    api: 'https://api.etherscan.io/api',
-    name: 'Ethereum Mainnet',
-  },
-  sepolia: {
-    api: 'https://api-sepolia.etherscan.io/api',
-    name: 'Sepolia Testnet',
-  },
-};
 
 // ============= COMPATIBILITY PATTERNS =============
 
@@ -256,104 +240,6 @@ const COMPATIBILITY_PATTERNS: CompatibilityPattern[] = [
 ];
 
 // ============= MAIN FUNCTIONS =============
-
-/**
- * Fetch contract source code from Etherscan
- */
-export async function fetchContractSource(
-  address: string,
-  network: NetworkType,
-  apiKey?: string
-): Promise<FetchedContract> {
-  const explorer = EXPLORER_APIS[network];
-  const key = apiKey || process.env.ETHERSCAN_API_KEY || '';
-
-  // Validate address format
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    throw new Error('Invalid Ethereum address format');
-  }
-
-  if (!key) {
-    throw new Error(
-      'Importing from Ethereum needs an Etherscan API key. Set ETHERSCAN_API_KEY in .env.local, ' +
-      'or paste the contract source directly using "code" mode.'
-    );
-  }
-
-  // Fetch contract source
-  const url = `${explorer.api}?module=contract&action=getsourcecode&address=${address}&apikey=${key}`;
-
-  const response = await fetch(url);
-  const data = await response.json();
-
-  if (data.status !== '1' || !data.result || data.result.length === 0) {
-    // Etherscan answers a bad key or an unknown address with a bare "NOTOK".
-    const detail = typeof data.result === 'string' ? data.result : data.message;
-    throw new Error(
-      detail && detail !== 'NOTOK'
-        ? detail
-        : `Etherscan could not return source for ${address} on ${explorer.name}. ` +
-          'Check the address is a verified contract and that ETHERSCAN_API_KEY is valid.'
-    );
-  }
-
-  const result = data.result[0];
-
-  if (!result.SourceCode || result.SourceCode === '') {
-    throw new Error('Contract source code is not verified on Etherscan');
-  }
-
-  // Parse source code (handle JSON format for multi-file contracts)
-  let sourceCode = result.SourceCode;
-
-  // Etherscan returns double-encoded JSON for multi-file contracts
-  if (sourceCode.startsWith('{{')) {
-    try {
-      // Remove outer braces and parse
-      const jsonStr = sourceCode.slice(1, -1);
-      const parsed: { sources?: Record<string, EtherscanSource> } = JSON.parse(jsonStr);
-
-      // Extract main contract source
-      if (parsed.sources) {
-        const sources = Object.entries(parsed.sources);
-        // Find the main contract file
-        const mainFile = sources.find(([path]) =>
-          path.includes(result.ContractName) ||
-          !path.includes('/')
-        );
-
-        if (mainFile) {
-          sourceCode = mainFile[1].content;
-        } else {
-          // Concatenate all sources
-          sourceCode = sources
-            .map(([path, content]) => `// File: ${path}\n${content.content}`)
-            .join('\n\n');
-        }
-      }
-    } catch {
-      // If parsing fails, use as-is
-    }
-  }
-
-  // Check if it's a proxy contract
-  const isProxy = result.Proxy === '1' ||
-    sourceCode.includes('delegatecall') && sourceCode.includes('implementation');
-
-  return {
-    name: result.ContractName || 'Unknown',
-    address,
-    network,
-    sourceCode,
-    compiler: result.CompilerVersion || 'Unknown',
-    optimizationUsed: result.OptimizationUsed === '1',
-    runs: parseInt(result.Runs) || 200,
-    constructorArguments: result.ConstructorArguments || '',
-    isVerified: true,
-    isProxy,
-    implementationAddress: result.Implementation || undefined,
-  };
-}
 
 /**
  * Check contract for Monad compatibility issues
@@ -596,6 +482,10 @@ export function analyzeForMigration(
       sourceCode,
       compiler: contractInfo?.compiler || 'Unknown',
       isVerified: contractInfo?.isVerified ?? false,
+      sourceProvider: contractInfo?.sourceProvider,
+      fileCount: contractInfo?.fileCount,
+      isProxy: contractInfo?.isProxy,
+      implementationAddress: contractInfo?.implementationAddress,
     },
     analysis: {
       compatibilityScore,

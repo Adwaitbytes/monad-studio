@@ -103,15 +103,15 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
       case 'C': return 'text-yellow-400';
       case 'D': return 'text-orange-400';
       case 'F': return 'text-red-400';
-      default: return 'text-gray-400';
+      default: return 'text-text-secondary';
     }
   };
 
 
   return (
-    <div className="h-full flex flex-col bg-[#0d1117] text-white">
+    <div className="h-full flex flex-col panel-surface">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -119,7 +119,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
             </svg>
             <span className="font-semibold">Parallel Execution Profiler</span>
           </div>
-          <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">
+          <span className="text-xs bg-purple-500/15 text-purple-600 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium">
             Monad Optimized
           </span>
         </div>
@@ -149,7 +149,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-border-subtle rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -175,8 +175,8 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
               </svg>
             </div>
-            <h3 className="text-xl font-semibold mb-2">Parallel Execution Analysis</h3>
-            <p className="text-gray-400 mb-6">
+            <h3 className="text-xl font-semibold text-text-primary mb-2">Parallel Execution Analysis</h3>
+            <p className="text-text-secondary mb-6">
               Analyze your Solidity contract to identify parallel execution potential on Monad&apos;s 10,000 TPS EVM.
             </p>
             <button
@@ -197,7 +197,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
               <div className="absolute inset-0 rounded-full border-4 border-purple-500/20"></div>
               <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-purple-500 animate-spin"></div>
             </div>
-            <p className="text-gray-400">Analyzing parallel execution potential...</p>
+            <p className="text-text-secondary">Analyzing parallel execution potential...</p>
           </div>
         </div>
       )}
@@ -206,7 +206,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
       {analysis && !loading && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Score Overview */}
-          <div className="px-4 py-4 border-b border-gray-800">
+          <div className="px-4 py-4 border-b border-border-subtle">
             <div className="flex items-center gap-6">
               {/* Score Circle */}
               <div className="relative w-24 h-24">
@@ -218,7 +218,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                     stroke="currentColor"
                     strokeWidth="8"
                     fill="none"
-                    className="text-gray-800"
+                    className="text-text-primary"
                   />
                   <circle
                     cx="48"
@@ -241,7 +241,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                   <span className={`text-2xl font-bold ${getGradeColor(analysis.grade)}`}>
                     {analysis.score}
                   </span>
-                  <span className="text-xs text-gray-500">/ 100</span>
+                  <span className="text-xs text-text-muted">/ 100</span>
                 </div>
               </div>
 
@@ -251,32 +251,32 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                   <div className={`text-3xl font-bold ${getGradeColor(analysis.grade)}`}>
                     {analysis.grade}
                   </div>
-                  <div className="text-xs text-gray-500">Grade</div>
+                  <div className="text-xs text-text-muted">Grade</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-green-400">
                     {analysis.parallelizableFunctions}
                   </div>
-                  <div className="text-xs text-gray-500">Parallel</div>
+                  <div className="text-xs text-text-muted">Parallel</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-red-400">
                     {analysis.conflicts.filter(c => c.severity === 'high').length}
                   </div>
-                  <div className="text-xs text-gray-500">Conflicts</div>
+                  <div className="text-xs text-text-muted">Conflicts</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-blue-400">
                     {analysis.totalFunctions}
                   </div>
-                  <div className="text-xs text-gray-500">Functions</div>
+                  <div className="text-xs text-text-muted">Functions</div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-800">
+          <div className="flex border-b border-border-subtle">
             {(['overview', 'graph', 'functions', 'optimize'] as const).map((tab) => (
               <button
                 key={tab}
@@ -284,7 +284,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                 className={`px-4 py-2.5 text-sm font-medium capitalize transition-colors ${
                   activeTab === tab
                     ? 'text-purple-400 border-b-2 border-purple-400'
-                    : 'text-gray-400 hover:text-gray-300'
+                    : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
                 {tab}
@@ -297,16 +297,16 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
             {activeTab === 'overview' && (
               <div className="space-y-4">
                 {/* Summary */}
-                <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+                <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
                   <h4 className="font-medium mb-2">Analysis Summary</h4>
-                  <div className="text-sm text-gray-300 whitespace-pre-wrap">
+                  <div className="text-sm text-text-primary whitespace-pre-wrap">
                     {analysis.summary}
                   </div>
                 </div>
 
                 {/* Priority Actions */}
                 {analysis.priorities.length > 0 && (
-                  <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+                  <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
                     <h4 className="font-medium mb-3 flex items-center gap-2">
                       <svg className="w-4 h-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -317,7 +317,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                       {analysis.priorities.map((priority, idx) => (
                         <li key={idx} className="flex items-start gap-2 text-sm">
                           <span className="text-yellow-400">•</span>
-                          <span className="text-gray-300">{priority}</span>
+                          <span className="text-text-primary">{priority}</span>
                         </li>
                       ))}
                     </ul>
@@ -326,7 +326,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
 
                 {/* Conflicts */}
                 {analysis.conflicts.length > 0 && (
-                  <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+                  <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
                     <h4 className="font-medium mb-3 flex items-center gap-2">
                       <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -351,13 +351,13 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                                 ? 'bg-red-500/20 text-red-400'
                                 : conflict.severity === 'medium'
                                 ? 'bg-yellow-500/20 text-yellow-400'
-                                : 'bg-gray-500/20 text-gray-400'
+                                : 'bg-gray-500/20 text-text-secondary'
                             }`}>
                               {conflict.severity.toUpperCase()}
                             </span>
                             <span className="font-mono text-sm">{conflict.variable}</span>
                           </div>
-                          <p className="text-sm text-gray-400">{conflict.description}</p>
+                          <p className="text-sm text-text-secondary">{conflict.description}</p>
                         </div>
                       ))}
                     </div>
@@ -365,7 +365,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                 )}
 
                 {/* Metadata */}
-                <div className="text-xs text-gray-500 flex items-center gap-4">
+                <div className="text-xs text-text-muted flex items-center gap-4">
                   <span>Analysis time: {analysis.metadata.analysisTimeMs}ms</span>
                   <span>•</span>
                   <span>{new Date(analysis.metadata.timestamp).toLocaleString()}</span>
@@ -400,7 +400,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                           func.canParallelize ? 'bg-green-400' : 'bg-red-400'
                         }`}></span>
                         <span className="font-mono font-medium">{func.name}()</span>
-                        <span className="text-xs text-gray-500">{func.visibility}</span>
+                        <span className="text-xs text-text-muted">{func.visibility}</span>
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         func.canParallelize
@@ -412,13 +412,13 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="text-gray-500">Reads:</span>
+                        <span className="text-text-muted">Reads:</span>
                         <span className="ml-2 text-blue-400">
                           {func.reads.length > 0 ? func.reads.join(', ') : 'None'}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Writes:</span>
+                        <span className="text-text-muted">Writes:</span>
                         <span className="ml-2 text-red-400">
                           {func.writes.length > 0 ? func.writes.join(', ') : 'None'}
                         </span>
@@ -426,7 +426,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                     </div>
                     {func.conflictsWith.length > 0 && (
                       <div className="mt-2 text-sm">
-                        <span className="text-gray-500">Conflicts with:</span>
+                        <span className="text-text-muted">Conflicts with:</span>
                         <span className="ml-2 text-yellow-400">
                           {func.conflictsWith.join(', ')}
                         </span>

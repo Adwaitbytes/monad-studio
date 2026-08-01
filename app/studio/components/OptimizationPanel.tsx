@@ -29,7 +29,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
       case 'low':
         return 'bg-green-500/20 text-green-400 border-green-500/30';
       default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+        return 'bg-gray-500/20 text-text-secondary border-gray-500/30';
     }
   };
 
@@ -92,8 +92,8 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="text-lg font-semibold text-white mb-2">Excellent Optimization!</h3>
-        <p className="text-gray-400 max-w-md">
+        <h3 className="text-lg font-semibold text-text-primary mb-2">Excellent Optimization!</h3>
+        <p className="text-text-secondary max-w-md">
           Your contract is well-optimized for Monad&apos;s parallel execution.
           No immediate improvements needed.
         </p>
@@ -110,25 +110,25 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
   return (
     <div className="space-y-4">
       {/* Summary */}
-      <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+      <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
         <div className="flex items-center gap-4 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-red-500"></div>
-            <span className="text-gray-400">High Priority:</span>
+            <span className="text-text-secondary">High Priority:</span>
             <span className="text-white font-bold">
               {suggestions.filter(s => s.priority === 'high').length}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-yellow-500"></div>
-            <span className="text-gray-400">Medium:</span>
+            <span className="text-text-secondary">Medium:</span>
             <span className="text-white font-bold">
               {suggestions.filter(s => s.priority === 'medium').length}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-green-500"></div>
-            <span className="text-gray-400">Low:</span>
+            <span className="text-text-secondary">Low:</span>
             <span className="text-white font-bold">
               {suggestions.filter(s => s.priority === 'low').length}
             </span>
@@ -141,13 +141,13 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
         <div
           key={index}
           className={`rounded-lg border overflow-hidden transition-all ${
-            expandedIndex === index ? 'border-purple-500/50' : 'border-gray-800'
+            expandedIndex === index ? 'border-purple-500/50' : 'border-border-subtle'
           }`}
         >
           {/* Header */}
           <button
             onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-            className="w-full p-4 flex items-center gap-4 bg-gray-900/50 hover:bg-gray-800/50 transition-colors"
+            className="w-full p-4 flex items-center gap-4 panel-surface/50 hover:bg-border-subtle/50 transition-colors"
           >
             {/* Icon */}
             <div className={`p-2 rounded-lg ${getPriorityColor(suggestion.priority)}`}>
@@ -162,18 +162,18 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
                   {suggestion.priority.toUpperCase()}
                 </span>
               </div>
-              <p className="text-sm text-gray-400 mt-1 line-clamp-1">{suggestion.description}</p>
+              <p className="text-sm text-text-secondary mt-1 line-clamp-1">{suggestion.description}</p>
             </div>
 
             {/* Gas Impact */}
             <div className="text-right">
-              <div className="text-xs text-gray-500">Gas Impact</div>
+              <div className="text-xs text-text-muted">Gas Impact</div>
               <div className="text-sm text-green-400">{suggestion.gasImpact}</div>
             </div>
 
             {/* Expand Icon */}
             <svg
-              className={`w-5 h-5 text-gray-400 transition-transform ${
+              className={`w-5 h-5 text-text-secondary transition-transform ${
                 expandedIndex === index ? 'rotate-180' : ''
               }`}
               fill="none"
@@ -186,8 +186,8 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
 
           {/* Expanded Content */}
           {expandedIndex === index && (
-            <div className="p-4 bg-gray-950/50 border-t border-gray-800 space-y-4">
-              <p className="text-sm text-gray-300">{suggestion.description}</p>
+            <div className="p-4 panel-sunken/50 border-t border-border-subtle space-y-4">
+              <p className="text-sm text-text-primary">{suggestion.description}</p>
 
               {/* Code Comparison */}
               {suggestion.currentCode && suggestion.suggestedCode && (
@@ -208,7 +208,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
                       <span className="text-xs font-medium text-green-400">Suggested Code</span>
                       <button
                         onClick={() => copyCode(suggestion.suggestedCode!, index)}
-                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+                        className="text-xs text-text-secondary hover:text-white flex items-center gap-1"
                       >
                         {copiedIndex === index ? (
                           <>
@@ -236,7 +236,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
 
               {/* Type Badge */}
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-500">Type:</span>
+                <span className="text-text-muted">Type:</span>
                 <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded">
                   {suggestion.type.replace(/_/g, ' ')}
                 </span>
@@ -256,7 +256,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
           </div>
           <div>
             <h4 className="font-medium text-white mb-1">Monad Optimization Tips</h4>
-            <ul className="text-sm text-gray-400 space-y-1">
+            <ul className="text-sm text-text-secondary space-y-1">
               <li>• Use mappings keyed by user address for natural parallelization</li>
               <li>• Avoid shared counters - consider per-user nonces instead</li>
               <li>• Batch operations into single transactions when possible</li>

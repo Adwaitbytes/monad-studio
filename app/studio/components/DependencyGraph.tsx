@@ -125,7 +125,7 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
   const [edges, , onEdgesChange] = useEdgesState(processedEdges);
 
   return (
-    <div className="w-full h-full bg-[#0a0f16] rounded-lg overflow-hidden border border-gray-800">
+    <div className="w-full h-full panel-sunken rounded-lg overflow-hidden border border-border-subtle">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -139,18 +139,18 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
         }}
       >
         <Background color="#1e293b" gap={20} />
-        <Controls className="bg-gray-900 border-gray-700" />
+        <Controls className="panel-surface border-border-strong" />
         <MiniMap
           nodeColor={(node) => {
             if (node.data.parallelizable) return '#22c55e';
             return '#ef4444';
           }}
-          className="bg-gray-900 border border-gray-700"
+          className="panel-surface border border-border-strong"
         />
 
         {/* Legend Panel */}
-        <Panel position="top-right" className="bg-gray-900/90 p-3 rounded-lg border border-gray-700">
-          <div className="text-xs text-gray-400 space-y-2">
+        <Panel position="top-right" className="panel-surface/90 p-3 rounded-lg border border-border-strong">
+          <div className="text-xs text-text-secondary space-y-2">
             <div className="font-semibold text-white mb-2">Legend</div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-green-500"></div>
@@ -164,7 +164,7 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
               <div className="w-3 h-3 rounded-full bg-purple-500"></div>
               <span>Storage ({stats.totalStorageVars})</span>
             </div>
-            <div className="border-t border-gray-700 mt-2 pt-2">
+            <div className="border-t border-border-strong mt-2 pt-2">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-0.5 bg-blue-500"></div>
                 <span>Read</span>
@@ -182,14 +182,14 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
         </Panel>
 
         {/* Stats Panel */}
-        <Panel position="bottom-right" className="bg-gray-900/90 p-3 rounded-lg border border-gray-700">
+        <Panel position="bottom-right" className="panel-surface/90 p-3 rounded-lg border border-border-strong">
           <div className="text-xs space-y-1">
             <div className="flex justify-between gap-4">
-              <span className="text-gray-400">High Conflicts:</span>
+              <span className="text-text-secondary">High Conflicts:</span>
               <span className="text-red-400 font-bold">{stats.highConflicts}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-gray-400">Medium Conflicts:</span>
+              <span className="text-text-secondary">Medium Conflicts:</span>
               <span className="text-yellow-400 font-bold">{stats.mediumConflicts}</span>
             </div>
           </div>

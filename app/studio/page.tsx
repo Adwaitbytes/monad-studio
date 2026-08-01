@@ -54,11 +54,14 @@ import type { QuickActionType } from "@/lib/supabase";
 import { ParallelProfiler } from "./components/ParallelProfiler";
 import { MigrationWizard } from "./components/MigrationWizard";
 import { Markdown } from "./components/Markdown";
+import { ContractInteraction } from "./components/ContractInteraction";
+import { GasProfiler } from "./components/GasProfiler";
 import { generateFromTemplate, ARCHITECT_TO_TEMPLATE, CONTRACT_TEMPLATES } from "@/lib/contractTemplates";
 import { analytics } from "@/lib/supabase";
 import { createPaymentHeader } from "@/utils/q402";
 import { getEthereumProvider } from "@/lib/ethereum";
-import { deployFromWallet } from "@/lib/deploy";
+import { deployFromWallet, constructorInputs, type ConstructorInput } from "@/lib/deploy";
+import { coerceArgument } from "@/lib/contractInteraction";
 import type { Abi } from "viem";
 import {
   errorMessage,
@@ -895,6 +898,13 @@ export default function StudioPage() {
   const [parallelProfilerOpen, setParallelProfilerOpen] = useState(false);
   // Migration Tool State
   const [migrationOpen, setMigrationOpen] = useState(false);
+  const [interactOpen, setInteractOpen] = useState(false);
+  const [gasOpen, setGasOpen] = useState(false);
+  // A constructor with parameters cannot be deployed blind; these hold the
+  // prompt state until the user supplies them.
+  const [ctorInputs, setCtorInputs] = useState<ConstructorInput[]>([]);
+  const [ctorArgs, setCtorArgs] = useState<string[]>([]);
+  const [ctorError, setCtorError] = useState<string | null>(null);
   // Architect Chat State
   const [architectChatInput, setArchitectChatInput] = useState("");
   const [architectChatHistory, setArchitectChatHistory] = useState<{role: "user" | "assistant", content: string}[]>([]);
@@ -907,6 +917,8 @@ export default function StudioPage() {
   const aiResize = useResizable({ initial: 380, min: 300, max: 720, edge: "left", storageKey: "ms.w.ai" });
   const profilerResize = useResizable({ initial: 500, min: 360, max: 900, edge: "left", storageKey: "ms.w.profiler" });
   const migrationResize = useResizable({ initial: 450, min: 360, max: 860, edge: "left", storageKey: "ms.w.migration" });
+  const interactResize = useResizable({ initial: 420, min: 340, max: 820, edge: "left", storageKey: "ms.w.interact" });
+  const gasResize = useResizable({ initial: 460, min: 360, max: 860, edge: "left", storageKey: "ms.w.gas" });
   const terminalResize = useResizable({ initial: 180, min: 90, max: 520, edge: "top", storageKey: "ms.h.terminal" });
 
   /**
@@ -918,16 +930,18 @@ export default function StudioPage() {
     if (!aiPanelOpen) toggleAIPanel();
     setParallelProfilerOpen(false);
     setMigrationOpen(false);
+    setInteractOpen(false);
+    setGasOpen(false);
   };
 
-  const openSidePanel = (panel: "ai" | "profiler" | "migration") => {
+  const openSidePanel = (panel: "ai" | "profiler" | "migration" | "interact" | "gas") => {
     const aiNext = panel === "ai" ? !aiPanelOpen : false;
-    const profilerNext = panel === "profiler" ? !parallelProfilerOpen : false;
-    const migrationNext = panel === "migration" ? !migrationOpen : false;
 
     if (aiNext !== aiPanelOpen) toggleAIPanel();
-    setParallelProfilerOpen(profilerNext);
-    setMigrationOpen(migrationNext);
+    setParallelProfilerOpen(panel === "profiler" ? !parallelProfilerOpen : false);
+    setMigrationOpen(panel === "migration" ? !migrationOpen : false);
+    setInteractOpen(panel === "interact" ? !interactOpen : false);
+    setGasOpen(panel === "gas" ? !gasOpen : false);
   };
 
   // Seed the workspace with a starter file on first mount. `files` is read
@@ -1229,6 +1243,32 @@ export default function StudioPage() {
       return;
     }
 
+    // Ask for constructor arguments before touching the wallet. Deploying with
+    // the wrong number of them reverts on chain and costs gas for nothing.
+    const required = constructorInputs(compileResult.abi as Abi);
+    if (required.length > 0 && ctorInputs.length === 0) {
+      setCtorInputs(required);
+      setCtorArgs(required.map(() => ""));
+      setCtorError(null);
+      return;
+    }
+
+    await performDeploy(required, ctorArgs);
+  };
+
+  const performDeploy = async (required: ConstructorInput[], rawArgs: string[]) => {
+    if (!compileResult?.abi || !compileResult.bytecode || !walletAddress) return;
+
+    let typedArgs: unknown[];
+    try {
+      typedArgs = required.map((input, i) => coerceArgument(rawArgs[i] ?? "", input.type));
+    } catch (err) {
+      setCtorError(errorMessage(err));
+      return;
+    }
+
+    setCtorInputs([]);
+    setCtorError(null);
     setDeploying(true);
     addConsoleOutput(`🚀 Deploying ${language === "python" ? "Python" : "Solidity"} contract to Monad testnet...`);
     addConsoleOutput("🔑 Confirm the transaction in your wallet...");
@@ -1237,7 +1277,8 @@ export default function StudioPage() {
       const result = await deployFromWallet(
         compileResult.abi as Abi,
         compileResult.bytecode,
-        walletAddress as `0x${string}`
+        walletAddress as `0x${string}`,
+        typedArgs
       );
 
       addConsoleOutput(`✅ Contract deployed!`);
@@ -2160,6 +2201,24 @@ Be concise but thorough. Format your response with markdown for readability.`;
 
           {/* Migration Tool Toggle */}
           <motion.button
+            onClick={() => openSidePanel("gas")}
+            className={`p-2 rounded-lg ${gasOpen ? "bg-gradient-to-r from-amber-500 to-orange-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
+            whileTap={{ scale: 0.95 }}
+            title="Gas profiler"
+          >
+            <Gauge size={16} />
+          </motion.button>
+
+          <motion.button
+            onClick={() => openSidePanel("interact")}
+            className={`p-2 rounded-lg ${interactOpen ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
+            whileTap={{ scale: 0.95 }}
+            title="Interact with a deployed contract"
+          >
+            <Play size={16} />
+          </motion.button>
+
+          <motion.button
             onClick={() => openSidePanel("migration")}
             className={`p-2 rounded-lg ${migrationOpen ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white" : isDark ? "bg-white/5 hover:bg-white/10" : "bg-gray-100 hover:bg-gray-200"}`}
             whileTap={{ scale: 0.95 }}
@@ -2937,6 +2996,76 @@ Be concise but thorough. Format your response with markdown for readability.`;
           )}
         </AnimatePresence>
 
+        {/* Constructor arguments. Shown only when the ABI says the contract needs them. */}
+        <AnimatePresence>
+          {ctorInputs.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={() => setCtorInputs([])}
+            >
+              <motion.div
+                initial={{ scale: 0.96, y: 8 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.96, y: 8 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-2xl panel-surface border border-border-subtle p-5 shadow-[var(--shadow-panel)]"
+              >
+                <h3 className="text-base font-bold text-text-primary mb-1">Constructor arguments</h3>
+                <p className="text-xs text-text-secondary mb-4">
+                  This contract&apos;s constructor takes {ctorInputs.length} argument
+                  {ctorInputs.length === 1 ? "" : "s"}. Deploying without them reverts on chain.
+                </p>
+
+                <div className="space-y-3">
+                  {ctorInputs.map((input, i) => (
+                    <div key={input.name}>
+                      <label className="text-[10px] font-mono text-text-muted">
+                        {input.name}: {input.type}
+                      </label>
+                      <input
+                        autoFocus={i === 0}
+                        value={ctorArgs[i] ?? ""}
+                        onChange={(e) =>
+                          setCtorArgs((prev) => {
+                            const next = [...prev];
+                            next[i] = e.target.value;
+                            return next;
+                          })
+                        }
+                        placeholder={input.type === "string" ? "Hello Monad" : input.type}
+                        spellCheck={false}
+                        className="w-full mt-1 px-3 py-2 rounded-lg text-xs font-mono panel-sunken border border-border-subtle outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {ctorError && (
+                  <p className="mt-3 text-[11px] text-red-600 dark:text-red-400">{ctorError}</p>
+                )}
+
+                <div className="flex gap-2 mt-5">
+                  <button
+                    onClick={() => setCtorInputs([])}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold border border-border-subtle text-text-secondary hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => performDeploy(ctorInputs, ctorArgs)}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white"
+                  >
+                    Deploy
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Parallel Execution Profiler Panel */}
         {parallelProfilerOpen && (
           <ResizeHandle
@@ -2959,6 +3088,58 @@ Be concise but thorough. Format your response with markdown for readability.`;
               <ParallelProfiler
                 code={language === "python" ? (transpilledSolidity || code) : code}
                 onClose={() => setParallelProfilerOpen(false)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {gasOpen && (
+          <ResizeHandle
+            edge="left"
+            label="Resize gas profiler"
+            isDragging={gasResize.isDragging}
+            onPointerDown={gasResize.onPointerDown}
+            onReset={gasResize.reset}
+          />
+        )}
+        <AnimatePresence>
+          {gasOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: gasResize.size, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              style={{ width: gasResize.size }}
+              className="border-l border-border-subtle flex flex-col min-w-0 flex-shrink-0 overflow-hidden panel-surface"
+            >
+              <GasProfiler code={code} onClose={() => setGasOpen(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {interactOpen && (
+          <ResizeHandle
+            edge="left"
+            label="Resize interaction panel"
+            isDragging={interactResize.isDragging}
+            onPointerDown={interactResize.onPointerDown}
+            onReset={interactResize.reset}
+          />
+        )}
+        <AnimatePresence>
+          {interactOpen && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: interactResize.size, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              style={{ width: interactResize.size }}
+              className="border-l border-border-subtle flex flex-col min-w-0 flex-shrink-0 overflow-hidden panel-surface"
+            >
+              <ContractInteraction
+                abi={(compileResult?.abi as Abi | undefined) ?? null}
+                deployedAddress={deployedAddress}
+                walletAddress={walletAddress}
+                onClose={() => setInteractOpen(false)}
+                onLog={addConsoleOutput}
               />
             </motion.div>
           )}

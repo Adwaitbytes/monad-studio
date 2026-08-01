@@ -7,6 +7,7 @@
  */
 
 import { analyzeParallelPotential } from './parallelAnalyzer';
+import { checkCompiles } from './solcCheck';
 import type { FetchedContract, NetworkType } from './contractSources';
 
 // Source resolution lives in ./contractSources; re-exported here so the
@@ -57,6 +58,10 @@ export interface TransformResult {
   changes: CodeChange[];
   autoFixedCount: number;
   manualFixCount: number;
+  /** Whether the migrated source actually compiles under Solidity 0.8. */
+  compiles?: boolean;
+  /** Remaining compiler errors when it does not. */
+  compileErrors?: string[];
 }
 
 export interface MigrationResult {
@@ -332,9 +337,32 @@ export function transformForMonad(
     autoFixedCount++;
   }
 
+  // Auto-fix: legacy syntax must be migrated alongside the pragma, or the
+  // rewritten pragma simply moves the failure to the first removed keyword.
+  if (autoFix) {
+    const legacy = migrateLegacySyntax(migratedCode);
+    if (legacy.changes.length > 0) {
+      migratedCode = legacy.code;
+      for (const change of legacy.changes) {
+        changes.push({
+          type: 'pattern',
+          line: 0,
+          original: change.label.split(' -> ')[0],
+          replacement: change.label.split(' -> ')[1] ?? '',
+          reason: `${change.reason} (${change.count} occurrence${change.count === 1 ? '' : 's'})`,
+          autoFixed: true,
+        });
+        autoFixedCount++;
+      }
+    }
+  }
+
   // Auto-fix: Update old pragma versions
   if (autoFix) {
-    const oldPragmaMatch = migratedCode.match(/pragma\s+solidity\s+(\^?\s*)0\.[0-7]\.\d+\s*;/);
+    // Match every pragma form, including `=0.6.6` and `>=0.4.0 <0.6.0`, not
+    // just the caret style. A range pragma left in place fails the version check
+    // even after the rest of the contract has been migrated.
+    const oldPragmaMatch = migratedCode.match(/pragma\s+solidity\s+[^;]*0\.[0-7]\.\d+[^;]*;/);
     if (oldPragmaMatch) {
       const lineNum = migratedCode.substring(0, migratedCode.indexOf(oldPragmaMatch[0])).split('\n').length;
       migratedCode = migratedCode.replace(oldPragmaMatch[0], 'pragma solidity ^0.8.24;');
@@ -458,6 +486,11 @@ export function analyzeForMigration(
   // Transform code with auto-fixes
   const migration = transformForMonad(sourceCode, autoFix);
 
+  // Verify the rewrite rather than assume it. A contract that still fails to
+  // compile after migration is the single most useful thing to report, and
+  // claiming a compatibility score for it would be misleading.
+  const compileCheck = checkCompiles(migration.migratedCode);
+
   // Get parallel execution analysis
   let parallelScore = 0;
   let parallelGrade = 'F';
@@ -494,7 +527,7 @@ export function analyzeForMigration(
       parallelScore,
       parallelGrade,
     },
-    migration,
+    migration: { ...migration, compiles: compileCheck.compiles, compileErrors: compileCheck.errors },
     metadata: {
       analysisTimeMs,
       timestamp: new Date().toISOString(),
@@ -539,4 +572,426 @@ export function quickCompatibilityCheck(sourceCode: string): {
     criticalIssues,
     totalIssues: issues.length,
   };
+}
+
+/**
+ * Syntax that Solidity removed between 0.4 and 0.8.
+ *
+ * Contracts verified years ago, USDT among them, are written in 0.4 and cannot
+ * even be parsed by a 0.8 compiler. Rewriting the pragma alone produces a file
+ * that still fails on the first `constant` keyword, so migrating the pragma
+ * without migrating the syntax is worse than doing nothing: it looks like the
+ * tool succeeded.
+ */
+interface LegacyRule {
+  pattern: RegExp;
+  replacement: string;
+  reason: string;
+  /** Shown when a rule fires; used to explain what changed. */
+  label: string;
+}
+
+const LEGACY_SYNTAX_RULES: LegacyRule[] = [
+  {
+    // `function f() public constant returns (uint)` -> `view`
+    pattern: /\bconstant\b(?=\s*(?:public|external|internal|private|returns|\{))/g,
+    replacement: 'view',
+    reason: 'The `constant` function modifier was replaced by `view` in Solidity 0.5',
+    label: 'constant -> view',
+  },
+  {
+    pattern: /\bthrow\s*;/g,
+    replacement: 'revert();',
+    reason: '`throw` was removed in Solidity 0.5; `revert()` is the replacement',
+    label: 'throw -> revert()',
+  },
+  {
+    pattern: /\bsha3\s*\(/g,
+    replacement: 'keccak256(',
+    reason: '`sha3` was renamed to `keccak256`',
+    label: 'sha3 -> keccak256',
+  },
+  {
+    pattern: /\bsuicide\s*\(/g,
+    replacement: 'selfdestruct(',
+    reason: '`suicide` was renamed to `selfdestruct`',
+    label: 'suicide -> selfdestruct',
+  },
+  {
+    pattern: /\bmsg\.gas\b/g,
+    replacement: 'gasleft()',
+    reason: '`msg.gas` was replaced by `gasleft()`',
+    label: 'msg.gas -> gasleft()',
+  },
+  {
+    pattern: /\bblock\.blockhash\s*\(/g,
+    replacement: 'blockhash(',
+    reason: '`block.blockhash` was moved to the global `blockhash`',
+    label: 'block.blockhash -> blockhash',
+  },
+  {
+    pattern: /\bthis\.balance\b/g,
+    replacement: 'address(this).balance',
+    reason: 'Contract members moved behind an explicit address cast in Solidity 0.5',
+    label: 'this.balance -> address(this).balance',
+  },
+  {
+    pattern: /\bnow\b(?!\s*[:=])/g,
+    replacement: 'block.timestamp',
+    reason: '`now` was removed in Solidity 0.7; use `block.timestamp`',
+    label: 'now -> block.timestamp',
+  },
+  {
+    pattern: /\bbyte\b(?!\s*s)/g,
+    replacement: 'bytes1',
+    reason: '`byte` was renamed to `bytes1`',
+    label: 'byte -> bytes1',
+  },
+  {
+    pattern: /\buint\s*\(\s*-\s*1\s*\)/g,
+    replacement: 'type(uint).max',
+    reason: 'Wrapping negative literals was removed; use `type(uint).max`',
+    label: 'uint(-1) -> type(uint).max',
+  },
+  {
+    pattern: /\bcallcode\b/g,
+    replacement: 'delegatecall',
+    reason: '`callcode` was removed in Solidity 0.5',
+    label: 'callcode -> delegatecall',
+  },
+  {
+    pattern: /\byears\b(?=\s*[;)*+\-/])/g,
+    replacement: 'days * 365',
+    reason: 'The `years` time unit was removed in Solidity 0.5',
+    label: 'years -> days * 365',
+  },
+];
+
+/**
+ * Marks contracts that declare functions without a body as `abstract`.
+ *
+ * Solidity 0.6 requires the keyword; before that a contract with an
+ * unimplemented function was implicitly abstract. Base contracts in older
+ * token code, ERC20Basic and friends, all rely on the old behaviour.
+ */
+function migrateAbstractContracts(code: string): { code: string; count: number } {
+  let count = 0;
+
+  // Each contract body is scanned for a function declaration terminated by a
+  // semicolon, which is a declaration without an implementation.
+  const migrated = code.replace(
+    /(^|\n)(\s*)(contract\s+)(\w+)([^{]*)\{/g,
+    (whole, lead: string, indent: string, keyword: string, name: string, inherits: string, offset: number) => {
+      const bodyStart = offset + whole.length;
+      const body = extractBody(code, bodyStart - 1);
+      const hasUnimplemented = /\bfunction\s+\w+\s*\([^)]*\)[^;{]*;/.test(body);
+      if (!hasUnimplemented) return whole;
+      count++;
+      return `${lead}${indent}abstract ${keyword}${name}${inherits}{`;
+    }
+  );
+
+  return { code: migrated, count };
+}
+
+/** Returns the balanced brace body starting at the given opening brace. */
+function extractBody(code: string, openBraceIndex: number): string {
+  let depth = 0;
+  for (let i = openBraceIndex; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}') {
+      depth--;
+      if (depth === 0) return code.slice(openBraceIndex, i + 1);
+    }
+  }
+  return code.slice(openBraceIndex);
+}
+
+/**
+ * Prefixes event invocations with `emit`, required since Solidity 0.5.
+ *
+ * Only names that are actually declared as events in the same source are
+ * rewritten, so an ordinary function call that happens to be capitalised is
+ * left alone.
+ */
+function migrateEmitKeyword(code: string): { code: string; count: number } {
+  const events = [...code.matchAll(/\bevent\s+(\w+)\s*\(/g)].map((m) => m[1]);
+  if (events.length === 0) return { code, count: 0 };
+
+  let count = 0;
+  let migrated = code;
+
+  for (const name of events) {
+    // A statement position: start of a line, not already emitted, not a declaration.
+    const bare = new RegExp(`(^|[;{}]\\s*)(\\s*)${name}\\s*\\(`, 'gm');
+    migrated = migrated.replace(bare, (whole, prefix: string, indent: string) => {
+      if (/\bemit\s*$/.test(prefix + indent)) return whole;
+      count++;
+      return `${prefix}${indent}emit ${name}(`;
+    });
+  }
+
+  return { code: migrated, count };
+}
+
+/**
+ * Removes NatSpec parameter and return tags.
+ *
+ * solc validates them against the signature and treats a stale tag as a hard
+ * error, and contracts of this era routinely document parameters that were
+ * later renamed. The prose documentation is preserved.
+ */
+function stripStaleNatSpec(code: string): { code: string; count: number } {
+  const lines = code.split('\n');
+  const kept = lines.filter((line) => !/^\s*(\*|\/\/\/)\s*@(param|return)\b/.test(line));
+  return { code: kept.join('\n'), count: lines.length - kept.length };
+}
+
+/**
+ * Adds the data location that Solidity 0.5 made mandatory on reference-type
+ * parameters. `constructor(string _name)` no longer compiles; it must say
+ * `string memory _name`.
+ */
+function migrateDataLocations(code: string): { code: string; count: number } {
+  let count = 0;
+
+  const migrated = code.replace(
+    /\b(function\s+\w+|constructor)\s*\(([^)]*)\)/g,
+    (whole, head: string, params: string) => {
+      if (!params.trim()) return whole;
+
+      const fixed = params
+        .split(',')
+        .map((param) => {
+          const trimmed = param.trim();
+          if (!trimmed) return param;
+          if (/\b(memory|calldata|storage)\b/.test(trimmed)) return param;
+          // string, bytes and any array type need a location.
+          const needsLocation = /^(string|bytes)\b(?!\d)/.test(trimmed) || /\[\s*\]/.test(trimmed);
+          if (!needsLocation) return param;
+          count++;
+          return param.replace(/^(\s*)([\w\[\]]+)/, '$1$2 memory');
+        })
+        .join(',');
+
+      return `${head}(${fixed})`;
+    }
+  );
+
+  return { code: migrated, count };
+}
+
+/**
+ * Casts recipients of native value to `payable`, required since Solidity 0.5.
+ *
+ * Only single-argument calls are rewritten: `addr.transfer(amount)` moves ether,
+ * whereas `token.transfer(to, amount)` is an ERC20 call that must be left alone.
+ */
+function migratePayableCasts(code: string): { code: string; count: number } {
+  let count = 0;
+  const migrated = code.replace(
+    /\b((?:msg\.sender|[A-Za-z_]\w*(?:\.\w+)?))\.(transfer|send)\(\s*([^,()]*(?:\([^()]*\))?[^,()]*)\)/g,
+    (whole, target: string, method: string, arg: string) => {
+      if (target.startsWith('payable')) return whole;
+      count++;
+      return `payable(${target}).${method}(${arg})`;
+    }
+  );
+  return { code: migrated, count };
+}
+
+/**
+ * Replaces the `var` keyword, removed in Solidity 0.5.
+ *
+ * The type is inferred from the right-hand side rather than guessed: indexing a
+ * mapping yields that mapping's value type, and the declaration is read out of
+ * the same source. Where the type cannot be established the statement is left
+ * alone so the compiler reports it, which is better than silently choosing a
+ * type that changes the contract's behaviour.
+ */
+function migrateVarDeclarations(code: string): { code: string; count: number } {
+  // mapping (address => mapping (address => uint)) public allowed;
+  const mappingValueType = (name: string): string | null => {
+    const declaration = new RegExp(
+      `mapping\\s*\\([^)]*=>\\s*(?:mapping\\s*\\([^)]*=>\\s*([\\w\\[\\]]+)\\s*\\)|([\\w\\[\\]]+))\\s*\\)[^;]*\\b${name}\\b`
+    ).exec(code);
+    if (!declaration) return null;
+    return declaration[1] ?? declaration[2] ?? null;
+  };
+
+  let count = 0;
+  const migrated = code.replace(
+    /\bvar\s+(\w+)\s*=\s*([^;]+);/g,
+    (whole, varName: string, expression: string) => {
+      const indexed = /^(\w+)\s*\[/.exec(expression.trim());
+      if (indexed) {
+        const valueType = mappingValueType(indexed[1]);
+        if (valueType) {
+          count++;
+          return `${valueType} ${varName} = ${expression.trim()};`;
+        }
+      }
+
+      // Arithmetic and numeric literals are uint in this era of contract.
+      if (/^[\d\s+\-*/()]+$/.test(expression.trim())) {
+        count++;
+        return `uint256 ${varName} = ${expression.trim()};`;
+      }
+
+      return whole;
+    }
+  );
+
+  return { code: migrated, count };
+}
+
+/**
+ * Rewrites the pre-0.6 anonymous fallback function.
+ *
+ * `function() public payable {}` became `receive() external payable {}` for
+ * plain transfers and `fallback() external {}` for unmatched calls. This is one
+ * of the first things a 0.4 contract trips on, and WETH9 is the canonical case.
+ */
+function migrateFallback(code: string): { code: string; changed: boolean; label: string } {
+  const payable = /\bfunction\s*\(\s*\)\s*(?:public|external)?\s*payable\s*\{/;
+  if (payable.test(code)) {
+    return {
+      code: code.replace(payable, 'receive() external payable {'),
+      changed: true,
+      label: 'function() payable -> receive() external payable',
+    };
+  }
+
+  const plain = /\bfunction\s*\(\s*\)\s*(?:public|external)?\s*\{/;
+  if (plain.test(code)) {
+    return {
+      code: code.replace(plain, 'fallback() external {'),
+      changed: true,
+      label: 'function() -> fallback() external',
+    };
+  }
+
+  return { code, changed: false, label: '' };
+}
+
+/**
+ * Rewrites a contract's constructor from the pre-0.5 form, where the
+ * constructor was a function sharing the contract's name.
+ */
+function migrateNamedConstructor(code: string): { code: string; changed: boolean } {
+  // A flattened file holds many contracts, each of which may carry its own
+  // legacy constructor, so every declared name has to be considered.
+  const names = [...code.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1]);
+  let migrated = code;
+  let changed = false;
+
+  for (const name of names) {
+    const legacy = new RegExp(`\\bfunction\\s+${name}\\s*\\(`, 'g');
+    if (!legacy.test(migrated)) continue;
+    migrated = migrated.replace(legacy, 'constructor(');
+    changed = true;
+  }
+
+  return { code: migrated, changed };
+}
+
+/**
+ * Applies every legacy syntax rewrite, reporting each one that fired so the
+ * diff view can show the user what was changed on their behalf.
+ */
+export function migrateLegacySyntax(code: string): {
+  code: string;
+  changes: { label: string; reason: string; count: number }[];
+} {
+  let migrated = code;
+  const applied: { label: string; reason: string; count: number }[] = [];
+
+  for (const rule of LEGACY_SYNTAX_RULES) {
+    const matches = migrated.match(rule.pattern);
+    if (!matches || matches.length === 0) continue;
+    migrated = migrated.replace(rule.pattern, rule.replacement);
+    applied.push({ label: rule.label, reason: rule.reason, count: matches.length });
+  }
+
+  const abstracts = migrateAbstractContracts(migrated);
+  if (abstracts.count > 0) {
+    migrated = abstracts.code;
+    applied.push({
+      label: 'contract -> abstract contract',
+      reason: 'Contracts with unimplemented functions must be declared abstract since Solidity 0.6',
+      count: abstracts.count,
+    });
+  }
+
+  const natspec = stripStaleNatSpec(migrated);
+  if (natspec.count > 0) {
+    migrated = natspec.code;
+    applied.push({
+      label: 'stale NatSpec removed',
+      reason: 'solc rejects @param and @return tags that do not match the signature',
+      count: natspec.count,
+    });
+  }
+
+  const emits = migrateEmitKeyword(migrated);
+  if (emits.count > 0) {
+    migrated = emits.code;
+    applied.push({
+      label: 'event call -> emit',
+      reason: 'Event invocations require the `emit` keyword since Solidity 0.5',
+      count: emits.count,
+    });
+  }
+
+  const locations = migrateDataLocations(migrated);
+  if (locations.count > 0) {
+    migrated = locations.code;
+    applied.push({
+      label: 'explicit data location',
+      reason: 'Reference-type parameters require memory or calldata since Solidity 0.5',
+      count: locations.count,
+    });
+  }
+
+  const payableCasts = migratePayableCasts(migrated);
+  if (payableCasts.count > 0) {
+    migrated = payableCasts.code;
+    applied.push({
+      label: 'addr.transfer -> payable(addr).transfer',
+      reason: 'Sending native value requires a payable address since Solidity 0.5',
+      count: payableCasts.count,
+    });
+  }
+
+  const vars = migrateVarDeclarations(migrated);
+  if (vars.count > 0) {
+    migrated = vars.code;
+    applied.push({
+      label: 'var -> explicit type',
+      reason: 'The `var` keyword was removed in Solidity 0.5; the type is inferred from the assignment',
+      count: vars.count,
+    });
+  }
+
+  const fallback = migrateFallback(migrated);
+  if (fallback.changed) {
+    migrated = fallback.code;
+    applied.push({
+      label: fallback.label,
+      reason: 'The anonymous fallback function was split into receive and fallback in Solidity 0.6',
+      count: 1,
+    });
+  }
+
+  const ctor = migrateNamedConstructor(migrated);
+  if (ctor.changed) {
+    migrated = ctor.code;
+    applied.push({
+      label: 'named constructor -> constructor()',
+      reason: 'Constructors named after the contract were removed in Solidity 0.5',
+      count: 1,
+    });
+  }
+
+  return { code: migrated, changes: applied };
 }

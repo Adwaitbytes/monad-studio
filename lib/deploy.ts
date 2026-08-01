@@ -26,6 +26,21 @@ const CHAIN_NOT_ADDED = 4902;
 /** MetaMask's "user rejected the request" error code. */
 const USER_REJECTED = 4001;
 
+/** Constructor parameters the user must supply before a deploy can succeed. */
+export interface ConstructorInput {
+  name: string;
+  type: string;
+}
+
+export function constructorInputs(abi: Abi): ConstructorInput[] {
+  const ctor = abi.find((entry) => entry.type === "constructor");
+  if (!ctor || !("inputs" in ctor) || !Array.isArray(ctor.inputs)) return [];
+  return ctor.inputs.map((input, i) => ({
+    name: ("name" in input && input.name) || `arg${i}`,
+    type: "type" in input ? String(input.type) : "unknown",
+  }));
+}
+
 export interface DeployResult {
   address: Address;
   txHash: Hash;
@@ -75,7 +90,8 @@ async function ensureMonadTestnet(): Promise<void> {
 export async function deployFromWallet(
   abi: Abi,
   bytecode: string,
-  account: Address
+  account: Address,
+  args: readonly unknown[] = []
 ): Promise<DeployResult> {
   const ethereum = getEthereumProvider();
   if (!ethereum) throw new Error("No wallet detected. Install MetaMask to deploy.");
@@ -95,9 +111,20 @@ export async function deployFromWallet(
 
   const hex = (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`;
 
+  // A contract whose constructor takes parameters reverts when deployed with
+  // none, and the wallet reports only a generic failure, so the mismatch is
+  // caught here where it can be explained.
+  const expected = constructorInputs(abi);
+  if (expected.length !== args.length) {
+    throw new Error(
+      `This constructor needs ${expected.length} argument${expected.length === 1 ? "" : "s"} ` +
+      `(${expected.map((i) => `${i.name}: ${i.type}`).join(", ")}), but ${args.length} were supplied.`
+    );
+  }
+
   let txHash: Hash;
   try {
-    txHash = await walletClient.deployContract({ abi, bytecode: hex, args: [] });
+    txHash = await walletClient.deployContract({ abi, bytecode: hex, args });
   } catch (error) {
     if (isProviderRpcError(error) && error.code === USER_REJECTED) {
       throw new Error("Deployment cancelled in wallet.");

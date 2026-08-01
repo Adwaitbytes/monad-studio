@@ -2,13 +2,9 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { verifyPayment, settlePayment } from "../../../lib/q402";
 import { createWalletClient, createPublicClient, http, defineChain, getAddress, parseEther, isAddress } from "viem";
-import * as fs from "fs";
-import * as path from "path";
-import solc from "solc";
 import { privateKeyToAccount } from "viem/accounts";
-import { OPENZEPPELIN_SOURCES } from "../../../lib/openzeppelin-bundle";
+import { compileSolidity } from "../../../lib/solc";
 import { CONTRACT_TEMPLATES, generateFromTemplate } from "../../../lib/contractTemplates";
-import type { Abi } from "viem";
 
 // --- CHAIN DEFINITIONS ---
 const monadTestnet = defineChain({
@@ -44,150 +40,6 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const MONAD_CHAIN_ID = 10143;
 const Q402_PRICE_WEI = "100000000000000"; // 0.0001 MON
 const Q402_PAYEE = "0x9dF95D6b0Fa0F09C6a90B60D1B7F79167195EDB1";
-
-// --- ADDRESS CHECKSUM FIXER ---
-function fixAddressChecksums(sourceCode: string): string {
-    const addressRegex = /0x[a-fA-F0-9]{40}/g;
-    return sourceCode.replace(addressRegex, (match) => {
-        try {
-            return getAddress(match);
-        } catch {
-            return match;
-        }
-    });
-}
-
-// --- SOLIDITY COMPILER HELPER ---
-
-// Virtual filename handed to solc. Deliberately not a real path: compilation is
-// done entirely in memory so a user's contract can never overwrite a tracked
-// source file (contracts/GenContract.sol is a fixture the test suite depends on).
-const VIRTUAL_SOURCE = 'Contract.sol';
-
-interface SolcError {
-    severity: 'error' | 'warning' | 'info';
-    formattedMessage: string;
-}
-
-interface CompiledContract {
-    abi: Abi;
-    evm?: { bytecode?: { object?: string } };
-}
-
-interface CompileResult {
-    abi: Abi;
-    bytecode: string;
-}
-
-/**
- * Compiles a single Solidity source in memory using solc-js, resolving
- * OpenZeppelin imports from the bundled sources (with a node_modules fallback
- * for local development). Identical behaviour locally and on serverless.
- */
-async function compileSolidity(sourceCode: string): Promise<CompileResult> {
-    try {
-        // Fix any incorrectly checksummed addresses before handing off to solc
-        const source = fixAddressChecksums(sourceCode);
-
-        const contractNameMatch = source.match(/contract\s+(\w+)/);
-        const contractName = contractNameMatch ? contractNameMatch[1] : "GenContract";
-
-        console.log(`📦 Compiling contract: ${contractName}`);
-
-        // Prepare input for solc compiler
-        const input = {
-            language: 'Solidity',
-            sources: {
-                [VIRTUAL_SOURCE]: {
-                    content: source
-                }
-            },
-            settings: {
-                outputSelection: {
-                    '*': {
-                        '*': ['abi', 'evm.bytecode']
-                    }
-                },
-                optimizer: {
-                    enabled: true,
-                    runs: 200
-                }
-            }
-        };
-
-        // Import callback - uses bundled OpenZeppelin contracts
-        function findImports(importPath: string): { contents: string } | { error: string } {
-            console.log(`📥 Resolving import: ${importPath}`);
-
-            // Check bundled OpenZeppelin sources first
-            if (OPENZEPPELIN_SOURCES[importPath]) {
-                console.log(`✅ Found bundled: ${importPath}`);
-                return { contents: OPENZEPPELIN_SOURCES[importPath] };
-            }
-
-            // Try to read from node_modules as fallback
-            if (importPath.startsWith('@openzeppelin/')) {
-                try {
-                    const ozPath = path.join(process.cwd(), 'node_modules', importPath);
-                    if (fs.existsSync(ozPath)) {
-                        console.log(`✅ Found in node_modules: ${importPath}`);
-                        return { contents: fs.readFileSync(ozPath, 'utf8') };
-                    }
-                } catch {
-                    console.log(`⚠️ Failed to read from node_modules: ${importPath}`);
-                }
-            }
-
-            console.log(`❌ Import not found: ${importPath}`);
-            return { error: `File not found: ${importPath}` };
-        }
-
-        // Compile the contract
-        const output = JSON.parse(solc.compile(JSON.stringify(input), { import: findImports }));
-
-        // Check for errors
-        const diagnostics: SolcError[] = output.errors ?? [];
-        const errors = diagnostics.filter((e) => e.severity === 'error');
-        if (errors.length > 0) {
-            const errorMessages = errors.map((e) => e.formattedMessage).join('\n');
-            console.error('❌ Compilation errors:', errorMessages);
-            throw new Error(errorMessages);
-        }
-        const warnings = diagnostics.filter((e) => e.severity === 'warning');
-        if (warnings.length > 0) {
-            console.log(`⚠️ ${warnings.length} compilation warnings`);
-        }
-
-        // Extract the compiled contract
-        const contracts: Record<string, CompiledContract> | undefined = output.contracts?.[VIRTUAL_SOURCE];
-        if (!contracts || Object.keys(contracts).length === 0) {
-            throw new Error('No contracts found in compilation output');
-        }
-
-        // Try to find the contract by name, or use the first one
-        let contract = contracts[contractName];
-        if (!contract) {
-            const availableContracts = Object.keys(contracts);
-            console.log(`⚠️ Contract ${contractName} not found, available: ${availableContracts.join(', ')}`);
-            contract = contracts[availableContracts[0]];
-        }
-
-        const bytecode = contract?.evm?.bytecode?.object;
-        if (!bytecode) {
-            throw new Error(
-                `Contract compilation produced no bytecode. Abstract contracts and interfaces cannot be deployed.`
-            );
-        }
-
-        console.log(`✅ Compilation successful! Bytecode size: ${bytecode.length / 2} bytes`);
-
-        return { abi: contract.abi, bytecode };
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error('❌ Compilation error:', message);
-        throw new Error(`Compilation failed: ${message}`);
-    }
-}
 
 /**
  * The bundled OpenZeppelin is v5, whose constructor signatures differ from v4.

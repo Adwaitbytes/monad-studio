@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { recordDeployment, trackEvent, type EventType } from "@/lib/analytics";
+import { readRequestContext, referrerHost } from "@/lib/requestContext";
 
 const KNOWN_EVENTS: EventType[] = [
   "page_view",
@@ -27,6 +28,8 @@ interface TrackBody {
   durationMs?: unknown;
   detail?: unknown;
   walletAddress?: unknown;
+  referrer?: unknown;
+  path?: unknown;
   deployment?: {
     contractAddress?: unknown;
     contractName?: unknown;
@@ -64,9 +67,19 @@ export async function POST(req: Request) {
       ? body.walletAddress
       : undefined;
 
+  // Geography and device come from the request itself rather than the client,
+  // which cannot be trusted to report where it is.
+  const context = readRequestContext(req);
+  const referrer = referrerHost(
+    typeof body.referrer === "string" ? body.referrer : req.headers.get("referer")
+  );
+
   const written = await trackEvent({
     visitorId,
     type: body.type,
+    context,
+    referrer,
+    path: typeof body.path === "string" ? body.path.slice(0, 200) : null,
     status: body.status === "error" ? "error" : "success",
     durationMs: typeof body.durationMs === "number" ? Math.round(body.durationMs) : undefined,
     detail: typeof body.detail === "object" && body.detail !== null

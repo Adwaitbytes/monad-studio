@@ -941,7 +941,29 @@ export default function StudioPage() {
     setMigrationOpen(panel === "migration" ? !migrationOpen : false);
     setInteractOpen(panel === "interact" ? !interactOpen : false);
     setGasOpen(panel === "gas" ? !gasOpen : false);
+
+    // Opening a tool is the clearest signal of what people came for.
+    const opening =
+      (panel === "profiler" && !parallelProfilerOpen) ||
+      (panel === "migration" && !migrationOpen) ||
+      (panel === "gas" && !gasOpen) ||
+      (panel === "interact" && !interactOpen);
+    if (opening) {
+      const eventFor = {
+        profiler: "parallel_analysis",
+        migration: "migration",
+        gas: "gas_profile",
+        interact: "interact_read",
+        ai: "ai_generate",
+      } as const;
+      track(eventFor[panel], { walletAddress, detail: { opened: true } });
+    }
   };
+
+  // One page view per mount, so visitor counts reflect people rather than renders.
+  useEffect(() => {
+    track("page_view", { detail: { page: "studio" } });
+  }, []);
 
   // Seed the workspace with a starter file on first mount. `files` is read
   // through the store's getState so re-adding is not retriggered by its own write.

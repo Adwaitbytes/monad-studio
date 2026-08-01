@@ -51,6 +51,8 @@ export function track(type: EventType, options: TrackOptions = {}): void {
     detail: options.detail ?? {},
     walletAddress: options.walletAddress ?? undefined,
     deployment: options.deployment,
+    referrer: document.referrer || undefined,
+    path: window.location.pathname,
   });
 
   // sendBeacon survives a page navigation, which a fetch started during unload

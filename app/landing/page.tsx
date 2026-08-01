@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useThemeStore } from "@/lib/store";
 import { useHydrated } from "@/lib/useHydrated";
+import { track } from "@/lib/track";
 
 export default function LandingPage() {
   const { theme, toggleTheme } = useThemeStore();
@@ -33,6 +34,10 @@ export default function LandingPage() {
     deployments: 8921,
     gasOptimized: "42M"
   });
+
+  useEffect(() => {
+    track("page_view", { detail: { page: "landing" } });
+  }, []);
 
   useEffect(() => {
     // Simulate live metrics updates

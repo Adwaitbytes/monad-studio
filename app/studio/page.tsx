@@ -57,7 +57,7 @@ import { Markdown } from "./components/Markdown";
 import { ContractInteraction } from "./components/ContractInteraction";
 import { GasProfiler } from "./components/GasProfiler";
 import { generateFromTemplate, ARCHITECT_TO_TEMPLATE, CONTRACT_TEMPLATES } from "@/lib/contractTemplates";
-import { analytics } from "@/lib/supabase";
+import { track } from "@/lib/track";
 import { createPaymentHeader } from "@/utils/q402";
 import { getEthereumProvider } from "@/lib/ethereum";
 import { deployFromWallet, constructorInputs, type ConstructorInput } from "@/lib/deploy";
@@ -883,7 +883,6 @@ export default function StudioPage() {
   const [userFiles, setUserFiles] = useState<{name: string, code: string}[]>([
     { name: "MyToken.sol", code: DEFAULT_CONTRACT }
   ]);
-  const [userUUID, setUserUUID] = useState<string | null>(null);
 
   // ============= AI MODES STATE =============
   const [aiMode, setAIMode] = useState<"architect" | "researcher">("architect");
@@ -975,21 +974,8 @@ export default function StudioPage() {
         addConsoleOutput(`✅ Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`);
         
         // Track in Supabase - get or create user and store UUID
-        const user = await analytics.getOrCreateUser(address);
-        if (user) {
-          setUserUUID(user.id);
-          console.log('✅ User UUID stored:', user.id);
-          
-          analytics.trackAction({
-            user_id: user.id,
-            action_type: "wallet_connect",
-            action_category: "auth",
-          });
-          console.log('✅ Wallet connect tracked');
-        } else {
-          console.warn('⚠️ Failed to get user UUID');
-        }
-      } catch (err) {
+        track("wallet_connect", { walletAddress: address });
+            } catch (err) {
         addConsoleOutput(`❌ Wallet connection failed: ${errorMessage(err)}`);
       }
     } else {
@@ -1153,16 +1139,11 @@ export default function StudioPage() {
           abi: result.abi,
         });
         
-        // Track success
-        if (userUUID) {
-          analytics.trackCompilation({
-            userId: userUUID,
-            status: "success",
-            sourceCode: source,
-            compileTimeMs: compileTime,
-          });
-          console.log('✅ Compilation tracked (success)');
-        }
+        track("compile", {
+          durationMs: compileTime,
+          walletAddress,
+          detail: { bytes: result.contractSize, language },
+        });
       } else {
         addConsoleOutput(`❌ Compilation failed`);
         if (result.errors) {
@@ -1181,16 +1162,12 @@ export default function StudioPage() {
         }
 
         // Track failure
-        if (userUUID) {
-          analytics.trackCompilation({
-            userId: userUUID,
-            status: "error",
-            sourceCode: source,
-            errors: result.errors,
-            compileTimeMs: compileTime,
-          });
-          console.log('✅ Compilation tracked (error)');
-        }
+        track("compile", {
+          status: "error",
+          durationMs: compileTime,
+          walletAddress,
+          detail: { error: result.errors?.[0]?.message?.slice(0, 200) },
+        });
       }
     } catch (err) {
       addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
@@ -1288,16 +1265,17 @@ export default function StudioPage() {
       setDeployedAddress(result.address);
       setShowDeployModal(true);
 
-      if (userUUID) {
-        analytics.trackDeployment({
-          userId: userUUID,
+      track("deploy", {
+        walletAddress,
+        detail: { name: currentFileName },
+        deployment: {
           contractAddress: result.address,
-          network: "testnet",
-          transactionHash: result.txHash,
+          contractName: currentFileName.replace(/\.sol$/, ""),
+          txHash: result.txHash,
           deployerAddress: walletAddress,
-          gasUsed: result.gasUsed ? Number(result.gasUsed) : undefined,
-        });
-      }
+          gasUsed: result.gasUsed,
+        },
+      });
     } catch (err) {
       addConsoleOutput(`❌ Deployment failed: ${errorMessage(err)}`);
     } finally {
@@ -1390,7 +1368,7 @@ export default function StudioPage() {
         return;
       }
 
-      const { riskLevel, issues, riskScore, securityScore, deploymentRecommendation } = result.analysis;
+      const { riskLevel, issues, securityScore, deploymentRecommendation } = result.analysis;
       addConsoleOutput(`🛡️ Security Score: ${securityScore}/100`);
       addConsoleOutput(`⚠️ Risk Level: ${riskLevel.toUpperCase()}`);
       addConsoleOutput(`📋 Issues found: ${issues.length}`);
@@ -1404,16 +1382,10 @@ export default function StudioPage() {
       showAIPanel();
 
       // Track audit
-      if (userUUID) {
-        analytics.trackSecurityAudit({
-          userId: userUUID,
-          sourceCode: code,
-          riskScore,
-          riskLevel,
-          issues,
-        });
-        console.log('✅ Security audit tracked');
-      }
+      track("audit", {
+        walletAddress,
+        detail: { securityScore, riskLevel, issues: issues.length },
+      });
     } catch (err) {
       addConsoleOutput(`❌ Audit failed: ${errorMessage(err)}`);
     } finally {
@@ -1605,15 +1577,7 @@ Look for:
         // Ensure AI panel is visible
         showAIPanel();
         
-        if (userUUID) {
-          analytics.trackAIPrompt({
-            userId: userUUID,
-            promptType: action,
-            promptText: prompts[action],
-            responseText: response,
-          });
-          console.log(`✅ AI prompt tracked (${action})`);
-        }
+        track("ai_generate", { walletAddress, detail: { mode: action } });
       } else {
         const errorMsg = result.error || "Unknown error";
         setAIResponse(`❌ Analysis failed: ${errorMsg}`);
@@ -1823,15 +1787,7 @@ NO markdown, NO explanations, NO code blocks.`;
         addConsoleOutput(`💡 Connect a wallet to compile and deploy this contract.`);
       }
 
-      // Track in analytics
-      if (userUUID) {
-        analytics.trackAIPrompt({
-          userId: userUUID,
-          promptType: "architect",
-          promptText: `Generated ${contractType.name}`,
-          responseText: generatedCode,
-        });
-      }
+      track("ai_generate", { walletAddress, detail: { mode: "architect", type: contractType.name } });
 
     } catch (err) {
       addConsoleOutput(`❌ Error: ${errorMessage(err)}`);
@@ -1956,14 +1912,7 @@ NO markdown, NO explanations, NO code blocks, JUST THE CODE.`;
       }
 
       // Track analytics
-      if (userUUID) {
-        analytics.trackAIPrompt({
-          userId: userUUID,
-          promptType: "architect",
-          promptText: message,
-          responseText: generatedCode,
-        });
-      }
+      track("ai_generate", { walletAddress, detail: { mode: "architect" } });
 
     } catch (err) {
       setArchitectChatHistory(prev => [...prev, {
@@ -2023,14 +1972,7 @@ Be concise but thorough. Format your response with markdown for readability.`;
         const answer = result.answer || result.response || "I couldn't find specific information about that.";
         setResearchHistory(prev => [...prev, { role: "assistant", content: answer }]);
 
-        if (userUUID) {
-          analytics.trackAIPrompt({
-            userId: userUUID,
-            promptType: "research",
-            promptText: searchQuery,
-            responseText: answer,
-          });
-        }
+        track("ai_generate", { walletAddress, detail: { mode: "research" } });
       } else {
         setResearchHistory(prev => [...prev, {
           role: "assistant",

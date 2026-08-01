@@ -77,6 +77,16 @@ export default function StatsPage() {
 
         {stats && (
           <div className="space-y-8">
+            {stats.totalEvents === 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  No activity recorded yet. Tracking started{" "}
+                  {stats.firstEventAt ? "recently" : "just now"}, so there is no history to show.
+                  Open the studio and reload this page to see it populate.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Metric label="Total users" value={stats.totalUsers} />
               <Metric label="Returning" value={stats.returningUsers} hint="seen on 2+ days" />
@@ -388,7 +398,10 @@ function EmptyNote() {
   return (
     <div className="rounded-xl border border-border-subtle p-6 text-center">
       <p className="text-sm text-text-secondary">
-        Nothing recorded yet. Use the studio and this fills in immediately.
+        Nothing here yet. Open the studio and this fills in within seconds.
+      </p>
+      <p className="text-xs text-text-muted mt-1">
+        Viewing this dashboard is not itself tracked.
       </p>
     </div>
   );

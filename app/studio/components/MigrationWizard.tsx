@@ -56,7 +56,9 @@ interface MigrationWizardProps {
 
 export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps) {
   const [step, setStep] = useState<WizardStep>('input');
-  const [inputMode, setInputMode] = useState<InputMode>('address');
+  // Defaults to pasting source because that path needs no third-party key.
+  // Importing by address requires ETHERSCAN_API_KEY, which is optional config.
+  const [inputMode, setInputMode] = useState<InputMode>('code');
   const [network, setNetwork] = useState<NetworkType>('ethereum');
   const [address, setAddress] = useState('');
   const [pastedCode, setPastedCode] = useState('');

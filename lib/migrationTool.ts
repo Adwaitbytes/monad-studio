@@ -613,11 +613,21 @@ export function analyzeForMigration(
 }
 
 /**
- * Extract contract name from source code
+ * Extract contract name from source code.
+ *
+ * Comments are stripped first and the match is anchored to a declaration. A
+ * bare /contract\\s+(\\w+)/ happily matches prose such as
+ * "@dev Simple staking contract with rewards" and reports the name as "with".
  */
 function extractContractName(sourceCode: string): string {
-  const match = sourceCode.match(/contract\s+(\w+)/);
-  return match ? match[1] : 'Unknown';
+  const withoutComments = sourceCode
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+
+  const match = withoutComments.match(
+    /^\s*(?:abstract\s+)?contract\s+(\w+)\s*(?:is\b|\{)/m
+  );
+  return match ? match[1] : "Unknown";
 }
 
 /**

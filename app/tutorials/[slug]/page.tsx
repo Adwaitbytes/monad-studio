@@ -46,8 +46,8 @@ export default function TutorialPage() {
 
   const inlineFormat = (text: string) =>
     escapeHtml(text)
-      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
-      .replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-300 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
+      .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-text-primary">$1</strong>')
+      .replace(/`(.+?)`/g, '<code class="bg-purple-500/20 text-purple-700 dark:text-purple-300 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
 
   const processContent = () => {
     const lines = content.split('\n');
@@ -65,13 +65,13 @@ export default function TutorialPage() {
         } else {
           inCodeBlock = false;
           elements.push(
-            <pre key={`code-${i}`} className="relative bg-black/50 border border-white/10 rounded-lg p-4 overflow-x-auto my-4">
+            <pre key={`code-${i}`} className="relative panel-sunken border border-border-subtle rounded-lg p-4 overflow-x-auto my-4">
               {codeBlockLang && (
-                <span className="absolute top-2 right-3 text-[10px] uppercase tracking-wider text-gray-500">
+                <span className="absolute top-2 right-3 text-[10px] uppercase tracking-wider text-text-muted">
                   {codeBlockLang}
                 </span>
               )}
-              <code className="text-sm font-mono text-gray-300">{codeBlockContent.join('\n')}</code>
+              <code className="text-sm font-mono text-text-primary">{codeBlockContent.join('\n')}</code>
             </pre>
           );
           codeBlockContent = [];
@@ -86,23 +86,23 @@ export default function TutorialPage() {
 
       // Headers
       if (line.startsWith('### ')) {
-        elements.push(<h3 key={i} className="text-xl font-bold mt-6 mb-3 text-purple-400">{line.slice(4)}</h3>);
+        elements.push(<h3 key={i} className="text-xl font-bold mt-6 mb-3 text-purple-600 dark:text-purple-400">{line.slice(4)}</h3>);
       } else if (line.startsWith('## ')) {
-        elements.push(<h2 key={i} className="text-2xl font-bold mt-8 mb-4 text-purple-300">{line.slice(3)}</h2>);
+        elements.push(<h2 key={i} className="text-2xl font-bold mt-8 mb-4 text-purple-700 dark:text-purple-300">{line.slice(3)}</h2>);
       } else if (line.startsWith('# ')) {
-        elements.push(<h1 key={i} className="text-4xl font-bold mb-6 text-white">{line.slice(2)}</h1>);
+        elements.push(<h1 key={i} className="text-4xl font-bold mb-6 text-text-primary">{line.slice(2)}</h1>);
       } else if (line.startsWith('- ') || line.startsWith('* ')) {
         // List items
         const processed = inlineFormat(line.slice(2));
         elements.push(
-          <li key={i} className="text-gray-300 ml-6 mb-2" dangerouslySetInnerHTML={{ __html: `• ${processed}` }} />
+          <li key={i} className="text-text-primary ml-6 mb-2 list-disc" dangerouslySetInnerHTML={{ __html: processed }} />
         );
       } else if (!line.trim()) {
         elements.push(<br key={i} />);
       } else {
         // Regular paragraph
         const processed = inlineFormat(line);
-        elements.push(<p key={i} className="text-gray-300 leading-relaxed mb-3" dangerouslySetInnerHTML={{ __html: processed }} />);
+        elements.push(<p key={i} className="text-text-secondary leading-relaxed mb-3" dangerouslySetInnerHTML={{ __html: processed }} />);
       }
     });
 
@@ -111,27 +111,27 @@ export default function TutorialPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#080808] text-white flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading tutorial...</div>
+      <div className="min-h-screen bg-background text-text-primary flex items-center justify-center">
+        <div className="animate-pulse text-text-secondary">Loading tutorial...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white">
+    <div className="min-h-screen bg-background text-text-primary">
       {/* Background */}
       <div className="fixed inset-0 pointer-events-none z-0"
-        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
+        style={{ backgroundImage: 'radial-gradient(var(--border-strong) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
       </div>
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-purple-600/20 blur-[120px] rounded-full pointer-events-none z-0"></div>
 
       {/* Content */}
       <div className="relative z-10 max-w-4xl mx-auto px-6 py-12">
-        <Link href="/" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-8 text-sm font-bold">
+        <Link href="/" className="inline-flex items-center gap-2 text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:text-purple-300 mb-8 text-sm font-bold">
           ← Back to MonadStudio
         </Link>
 
-        <div className="bg-[#111] border border-white/5 rounded-3xl p-8 md:p-12">
+        <div className="panel-surface border border-border-subtle rounded-3xl p-8 md:p-12 shadow-[var(--shadow-panel)]">
           {processContent()}
         </div>
 

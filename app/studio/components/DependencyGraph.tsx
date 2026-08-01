@@ -66,7 +66,7 @@ const StorageNode = ({ data }: { data: GraphNodeData }) => {
     <div
       className={`w-20 h-20 rounded-full ${bgColor} ${borderColor} border-2 flex items-center justify-center shadow-lg`}
     >
-      <div className="text-white font-bold text-xs text-center px-1">
+      <div className="text-text-primary font-bold text-xs text-center px-1">
         {data.label}
       </div>
     </div>
@@ -151,7 +151,7 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
         {/* Legend Panel */}
         <Panel position="top-right" className="panel-surface/90 p-3 rounded-lg border border-border-strong">
           <div className="text-xs text-text-secondary space-y-2">
-            <div className="font-semibold text-white mb-2">Legend</div>
+            <div className="font-semibold text-text-primary mb-2">Legend</div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded bg-green-500"></div>
               <span>Parallelizable ({stats.parallelFunctions})</span>
@@ -186,7 +186,7 @@ export function DependencyGraph({ nodes: initialNodes, edges: initialEdges, stat
           <div className="text-xs space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-text-secondary">High Conflicts:</span>
-              <span className="text-red-400 font-bold">{stats.highConflicts}</span>
+              <span className="text-red-600 dark:text-red-400 font-bold">{stats.highConflicts}</span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-text-secondary">Medium Conflicts:</span>

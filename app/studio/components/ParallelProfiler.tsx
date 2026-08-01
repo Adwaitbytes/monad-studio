@@ -98,11 +98,11 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
 
   const getGradeColor = (grade: string) => {
     switch (grade) {
-      case 'A': return 'text-green-400';
-      case 'B': return 'text-blue-400';
+      case 'A': return 'text-green-600 dark:text-green-400';
+      case 'B': return 'text-blue-600 dark:text-blue-400';
       case 'C': return 'text-yellow-400';
-      case 'D': return 'text-orange-400';
-      case 'F': return 'text-red-400';
+      case 'D': return 'text-orange-600 dark:text-orange-400';
+      case 'F': return 'text-red-600 dark:text-red-400';
       default: return 'text-text-secondary';
     }
   };
@@ -114,12 +114,12 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span className="font-semibold">Parallel Execution Profiler</span>
           </div>
-          <span className="text-xs bg-purple-500/15 text-purple-600 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium">
+          <span className="text-xs bg-purple-500/15 text-purple-600 dark:text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium">
             Monad Optimized
           </span>
         </div>
@@ -161,7 +161,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
 
       {/* Error Message */}
       {error && (
-        <div className="mx-4 mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
+        <div className="mx-4 mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-700 dark:text-red-300 text-sm">
           {error}
         </div>
       )}
@@ -171,7 +171,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center max-w-md">
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center">
-              <svg className="w-10 h-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-10 h-10 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
               </svg>
             </div>
@@ -254,19 +254,19 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                   <div className="text-xs text-text-muted">Grade</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-green-400">
+                  <div className="text-3xl font-bold text-green-600 dark:text-green-400">
                     {analysis.parallelizableFunctions}
                   </div>
                   <div className="text-xs text-text-muted">Parallel</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-red-400">
+                  <div className="text-3xl font-bold text-red-600 dark:text-red-400">
                     {analysis.conflicts.filter(c => c.severity === 'high').length}
                   </div>
                   <div className="text-xs text-text-muted">Conflicts</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-400">
+                  <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
                     {analysis.totalFunctions}
                   </div>
                   <div className="text-xs text-text-muted">Functions</div>
@@ -283,7 +283,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                 onClick={() => setActiveTab(tab)}
                 className={`px-4 py-2.5 text-sm font-medium capitalize transition-colors ${
                   activeTab === tab
-                    ? 'text-purple-400 border-b-2 border-purple-400'
+                    ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-400'
                     : 'text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -328,7 +328,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                 {analysis.conflicts.length > 0 && (
                   <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
                     <h4 className="font-medium mb-3 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       State Conflicts ({analysis.conflicts.length})
@@ -348,7 +348,7 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                           <div className="flex items-center gap-2 mb-1">
                             <span className={`text-xs font-medium px-2 py-0.5 rounded ${
                               conflict.severity === 'high'
-                                ? 'bg-red-500/20 text-red-400'
+                                ? 'bg-red-500/20 text-red-600 dark:text-red-400'
                                 : conflict.severity === 'medium'
                                 ? 'bg-yellow-500/20 text-yellow-400'
                                 : 'bg-gray-500/20 text-text-secondary'
@@ -404,8 +404,8 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         func.canParallelize
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-red-500/20 text-red-400'
+                          ? 'bg-green-500/20 text-green-600 dark:text-green-400'
+                          : 'bg-red-500/20 text-red-600 dark:text-red-400'
                       }`}>
                         {func.canParallelize ? 'Parallelizable' : 'Sequential'}
                       </span>
@@ -413,13 +413,13 @@ export function ParallelProfiler({ code, onClose }: ParallelProfilerProps) {
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <span className="text-text-muted">Reads:</span>
-                        <span className="ml-2 text-blue-400">
+                        <span className="ml-2 text-blue-600 dark:text-blue-400">
                           {func.reads.length > 0 ? func.reads.join(', ') : 'None'}
                         </span>
                       </div>
                       <div>
                         <span className="text-text-muted">Writes:</span>
-                        <span className="ml-2 text-red-400">
+                        <span className="ml-2 text-red-600 dark:text-red-400">
                           {func.writes.length > 0 ? func.writes.join(', ') : 'None'}
                         </span>
                       </div>

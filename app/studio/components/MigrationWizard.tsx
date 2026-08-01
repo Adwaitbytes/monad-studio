@@ -74,23 +74,23 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
 
   const getGradeColor = (grade: string) => {
     switch (grade) {
-      case 'A': return 'text-green-400';
-      case 'B': return 'text-blue-400';
+      case 'A': return 'text-green-600 dark:text-green-400';
+      case 'B': return 'text-blue-600 dark:text-blue-400';
       case 'C': return 'text-yellow-400';
-      case 'D': return 'text-orange-400';
-      case 'F': return 'text-red-400';
-      default: return 'text-gray-400';
+      case 'D': return 'text-orange-600 dark:text-orange-400';
+      case 'F': return 'text-red-600 dark:text-red-400';
+      default: return 'text-text-secondary';
     }
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'critical': return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'high': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+      case 'critical': return 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30';
+      case 'high': return 'bg-orange-500/20 text-orange-600 dark:text-orange-400 border-orange-500/30';
       case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'low': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'info': return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+      case 'low': return 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30';
+      case 'info': return 'bg-gray-500/20 text-text-secondary border-gray-500/30';
+      default: return 'bg-gray-500/20 text-text-secondary border-gray-500/30';
     }
   };
 
@@ -176,23 +176,23 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#0d1117] text-white">
+    <div className="h-full flex flex-col panel-surface text-white">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
             </svg>
             <span className="font-semibold">Contract Migration</span>
           </div>
-          <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full">
+          <span className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-medium">
             ETH → Monad
           </span>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 hover:bg-gray-800 rounded-lg transition-colors"
+          className="p-1.5 hover:bg-border-subtle rounded-lg transition-colors"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -202,13 +202,13 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
 
       {/* Error Message */}
       {error && (
-        <div className="mx-4 mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm flex items-start gap-2">
+        <div className="mx-4 mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
           <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <div>
             <div className="font-medium">Error</div>
-            <div className="text-red-300/80">{error}</div>
+            <div className="text-red-700 dark:text-red-300/80">{error}</div>
           </div>
         </div>
       )}
@@ -218,13 +218,13 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
         <div className="flex-1 p-4 overflow-auto">
           <div className="max-w-md mx-auto space-y-6">
             {/* Input Mode Toggle */}
-            <div className="flex bg-gray-900 rounded-lg p-1">
+            <div className="flex panel-surface rounded-lg p-1">
               <button
                 onClick={() => setInputMode('address')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'address'
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    : 'text-text-secondary hover:text-white'
                 }`}
               >
                 From Address
@@ -234,7 +234,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'code'
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    : 'text-text-secondary hover:text-white'
                 }`}
               >
                 Paste Code
@@ -245,13 +245,13 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
             {inputMode === 'address' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Network
                   </label>
                   <select
                     value={network}
                     onChange={(e) => setNetwork(e.target.value as NetworkType)}
-                    className="w-full px-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white focus:border-blue-500 focus:outline-none"
+                    className="w-full px-4 py-2.5 panel-surface border border-border-subtle rounded-lg text-white focus:border-blue-500 focus:outline-none"
                   >
                     <option value="ethereum">Ethereum Mainnet</option>
                     <option value="sepolia">Sepolia Testnet</option>
@@ -261,7 +261,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Contract Address
                   </label>
                   <input
@@ -269,9 +269,9 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="0x..."
-                    className="w-full px-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono"
+                    className="w-full px-4 py-2.5 panel-surface border border-border-subtle rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono"
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-text-muted">
                     Any contract verified on Sourcify, Blockscout or Etherscan. No API key needed.
                   </p>
                 </div>
@@ -281,7 +281,7 @@ export function MigrationWizard({ onImportCode, onClose }: MigrationWizardProps)
             {/* Code Input */}
             {inputMode === 'code' && (
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Solidity Code
                 </label>
                 <textarea
@@ -294,7 +294,7 @@ contract MyContract {
     // Paste your contract code here...
 }"
                   rows={12}
-                  className="w-full px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono text-sm resize-none"
+                  className="w-full px-4 py-3 panel-surface border border-border-subtle rounded-lg text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none font-mono text-sm resize-none"
                 />
               </div>
             )}
@@ -310,22 +310,22 @@ contract MyContract {
 
             {/* Info Box */}
             <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <h4 className="font-medium text-blue-400 mb-2">What happens during analysis?</h4>
-              <ul className="space-y-1 text-sm text-gray-400">
+              <h4 className="font-medium text-blue-600 dark:text-blue-400 mb-2">What happens during analysis?</h4>
+              <ul className="space-y-1 text-sm text-text-secondary">
                 <li className="flex items-center gap-2">
-                  <span className="text-blue-400">1.</span>
+                  <span className="text-blue-600 dark:text-blue-400">1.</span>
                   Fetch verified source from Sourcify or Blockscout
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-blue-400">2.</span>
+                  <span className="text-blue-600 dark:text-blue-400">2.</span>
                   Check for Monad compatibility issues
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-blue-400">3.</span>
+                  <span className="text-blue-600 dark:text-blue-400">3.</span>
                   Analyze parallel execution potential
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-blue-400">4.</span>
+                  <span className="text-blue-600 dark:text-blue-400">4.</span>
                   Auto-fix safe issues & suggest optimizations
                 </li>
               </ul>
@@ -348,7 +348,7 @@ contract MyContract {
                   stroke="currentColor"
                   strokeWidth="8"
                   fill="none"
-                  className="text-gray-800"
+                  className="text-white"
                 />
                 <circle
                   cx="64"
@@ -369,11 +369,11 @@ contract MyContract {
                 </defs>
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-white">{progress}%</span>
+                <span className="text-3xl font-bold text-text-primary">{progress}%</span>
               </div>
             </div>
             <h3 className="text-lg font-semibold mb-2">Analyzing Contract</h3>
-            <p className="text-gray-400 text-sm">{progressText}</p>
+            <p className="text-text-secondary text-sm">{progressText}</p>
           </div>
         </div>
       )}
@@ -382,17 +382,17 @@ contract MyContract {
       {step === 'results' && result && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Score Overview */}
-          <div className="px-4 py-4 border-b border-gray-800">
+          <div className="px-4 py-4 border-b border-border-subtle">
             <div className="flex items-center gap-6">
               {/* Contract Info */}
               <div className="flex-1">
                 <h3 className="font-semibold text-lg">{result.contract.name}</h3>
                 {result.contract.address && (
-                  <p className="text-xs text-gray-500 font-mono mt-1">
+                  <p className="text-xs text-text-muted font-mono mt-1">
                     {result.contract.address.slice(0, 10)}...{result.contract.address.slice(-8)}
                   </p>
                 )}
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   Compiler: {result.contract.compiler}
                   {result.contract.sourceProvider && ` · via ${result.contract.sourceProvider}`}
                   {result.contract.fileCount && result.contract.fileCount > 1 &&
@@ -412,7 +412,7 @@ contract MyContract {
                 <div className="text-center">
                   <div className="w-16 h-16 relative">
                     <svg className="w-full h-full -rotate-90">
-                      <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-gray-800" />
+                      <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-text-primary" />
                       <circle
                         cx="32"
                         cy="32"
@@ -430,14 +430,14 @@ contract MyContract {
                       </span>
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Compat</div>
+                  <div className="text-xs text-text-muted mt-1">Compat</div>
                 </div>
 
                 {/* Parallel Score */}
                 <div className="text-center">
                   <div className="w-16 h-16 relative">
                     <svg className="w-full h-full -rotate-90">
-                      <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-gray-800" />
+                      <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-text-primary" />
                       <circle
                         cx="32"
                         cy="32"
@@ -450,12 +450,12 @@ contract MyContract {
                       />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-sm font-bold text-purple-400">
+                      <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
                         {result.analysis.parallelGrade}
                       </span>
                     </div>
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Parallel</div>
+                  <div className="text-xs text-text-muted mt-1">Parallel</div>
                 </div>
               </div>
             </div>
@@ -464,9 +464,9 @@ contract MyContract {
           {/* Content */}
           <div className="flex-1 overflow-auto p-4 space-y-4">
             {/* Changes Summary */}
-            <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+            <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
               <h4 className="font-medium mb-3 flex items-center gap-2">
-                <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Migration Summary
@@ -474,12 +474,12 @@ contract MyContract {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <span className="text-gray-400">Auto-fixed:</span>
+                  <span className="text-text-secondary">Auto-fixed:</span>
                   <span className="font-medium">{result.migration.autoFixedCount}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <span className="text-gray-400">Manual review:</span>
+                  <span className="text-text-secondary">Manual review:</span>
                   <span className="font-medium">{result.migration.manualFixCount}</span>
                 </div>
               </div>
@@ -487,7 +487,7 @@ contract MyContract {
 
             {/* Issues List */}
             {result.analysis.issues.length > 0 && (
-              <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-800">
+              <div className="p-4 panel-surface/50 rounded-lg border border-border-subtle">
                 <h4 className="font-medium mb-3 flex items-center gap-2">
                   <svg className="w-4 h-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -506,10 +506,10 @@ contract MyContract {
                         </span>
                         <span className="text-sm font-medium">{issue.title}</span>
                         {issue.line && (
-                          <span className="text-xs text-gray-500">Line {issue.line}</span>
+                          <span className="text-xs text-text-muted">Line {issue.line}</span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-400">{issue.description}</p>
+                      <p className="text-sm text-text-secondary">{issue.description}</p>
                     </div>
                   ))}
                 </div>
@@ -520,7 +520,7 @@ contract MyContract {
             <div className="flex gap-3">
               <button
                 onClick={() => setStep('diff')}
-                className="flex-1 py-2.5 bg-gray-800 hover:bg-gray-700 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-2.5 bg-border-subtle hover:bg-gray-700 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -541,16 +541,16 @@ contract MyContract {
             {/* Alternative Import */}
             <button
               onClick={handleImportOriginal}
-              className="w-full py-2 text-sm text-gray-400 hover:text-white transition-colors"
+              className="w-full py-2 text-sm text-text-secondary hover:text-white transition-colors"
             >
               Or import original without changes
             </button>
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
+          <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-between text-xs text-text-muted">
             <span>Analysis time: {result.metadata.analysisTimeMs}ms</span>
-            <button onClick={resetWizard} className="text-blue-400 hover:text-blue-300">
+            <button onClick={resetWizard} className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:text-blue-300">
               Analyze Another
             </button>
           </div>
@@ -561,10 +561,10 @@ contract MyContract {
       {step === 'diff' && result && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Diff Header */}
-          <div className="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
+          <div className="px-4 py-2 border-b border-border-subtle flex items-center justify-between">
             <button
               onClick={() => setStep('results')}
-              className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

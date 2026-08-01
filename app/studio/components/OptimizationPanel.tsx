@@ -23,11 +23,11 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
+        return 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30';
       case 'medium':
         return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
       case 'low':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
+        return 'bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30';
       default:
         return 'bg-gray-500/20 text-text-secondary border-gray-500/30';
     }
@@ -88,11 +88,11 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <div className="w-16 h-16 mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
-          <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="text-lg font-semibold text-text-primary mb-2">Excellent Optimization!</h3>
+        <h3 className="text-lg font-semibold text-white mb-2">Excellent Optimization!</h3>
         <p className="text-text-secondary max-w-md">
           Your contract is well-optimized for Monad&apos;s parallel execution.
           No immediate improvements needed.
@@ -122,7 +122,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded bg-yellow-500"></div>
             <span className="text-text-secondary">Medium:</span>
-            <span className="text-white font-bold">
+            <span className="text-text-primary font-bold">
               {suggestions.filter(s => s.priority === 'medium').length}
             </span>
           </div>
@@ -157,7 +157,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
             {/* Title and Description */}
             <div className="flex-1 text-left">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-white">{suggestion.title}</span>
+                <span className="font-medium text-text-primary">{suggestion.title}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full border ${getPriorityColor(suggestion.priority)}`}>
                   {suggestion.priority.toUpperCase()}
                 </span>
@@ -168,7 +168,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
             {/* Gas Impact */}
             <div className="text-right">
               <div className="text-xs text-text-muted">Gas Impact</div>
-              <div className="text-sm text-green-400">{suggestion.gasImpact}</div>
+              <div className="text-sm text-green-600 dark:text-green-400">{suggestion.gasImpact}</div>
             </div>
 
             {/* Expand Icon */}
@@ -187,7 +187,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
           {/* Expanded Content */}
           {expandedIndex === index && (
             <div className="p-4 panel-sunken/50 border-t border-border-subtle space-y-4">
-              <p className="text-sm text-text-primary">{suggestion.description}</p>
+              <p className="text-sm text-white">{suggestion.description}</p>
 
               {/* Code Comparison */}
               {suggestion.currentCode && suggestion.suggestedCode && (
@@ -195,17 +195,17 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
                   {/* Current Code */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-red-400">Current Code</span>
+                      <span className="text-xs font-medium text-red-600 dark:text-red-400">Current Code</span>
                     </div>
                     <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                      <code className="text-sm text-red-300 font-mono">{suggestion.currentCode}</code>
+                      <code className="text-sm text-red-700 dark:text-red-300 font-mono">{suggestion.currentCode}</code>
                     </div>
                   </div>
 
                   {/* Suggested Code */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-green-400">Suggested Code</span>
+                      <span className="text-xs font-medium text-green-600 dark:text-green-400">Suggested Code</span>
                       <button
                         onClick={() => copyCode(suggestion.suggestedCode!, index)}
                         className="text-xs text-text-secondary hover:text-white flex items-center gap-1"
@@ -228,7 +228,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
                       </button>
                     </div>
                     <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                      <code className="text-sm text-green-300 font-mono">{suggestion.suggestedCode}</code>
+                      <code className="text-sm text-green-700 dark:text-green-300 font-mono">{suggestion.suggestedCode}</code>
                     </div>
                   </div>
                 </div>
@@ -237,7 +237,7 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
               {/* Type Badge */}
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-text-muted">Type:</span>
-                <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded">
+                <span className="px-2 py-0.5 bg-purple-500/15 text-purple-700 dark:text-purple-700 dark:text-purple-300 rounded">
                   {suggestion.type.replace(/_/g, ' ')}
                 </span>
               </div>
@@ -250,12 +250,12 @@ export function OptimizationPanel({ suggestions }: OptimizationPanelProps) {
       <div className="p-4 bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-purple-500/30 mt-6">
         <div className="flex items-start gap-3">
           <div className="p-2 bg-purple-500/20 rounded-lg">
-            <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
-            <h4 className="font-medium text-white mb-1">Monad Optimization Tips</h4>
+            <h4 className="font-medium text-text-primary mb-1">Monad Optimization Tips</h4>
             <ul className="text-sm text-text-secondary space-y-1">
               <li>• Use mappings keyed by user address for natural parallelization</li>
               <li>• Avoid shared counters - consider per-user nonces instead</li>

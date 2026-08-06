@@ -314,10 +314,26 @@ function detectConflicts(
         // unrelated accounts genuinely do run in parallel. Grading those as a
         // hard conflict would tell people to restructure code that is already
         // optimal.
-        severity: keyedWriters ? 'medium' : 'high',
+        severity: keyedWriters ? 'low' : 'high',
         description: keyedWriters
           ? `Functions (${uniqueWriters.join(', ')}) write to '${variable}'. Because it is keyed, they only serialise when two transactions touch the same key. Independent keys execute in parallel.`
           : `Multiple functions (${uniqueWriters.join(', ')}) write to '${variable}', a single storage slot. These always serialise.`
+      });
+    }
+
+    // Self-contention. A single function that writes an unkeyed slot serialises
+    // against its own concurrent invocations: a thousand callers of
+    // `counter += 1` all target one slot regardless of who they are. Modelling
+    // conflicts only between distinct functions missed this entirely, and it is
+    // the most consequential pattern on a parallel chain, so a lone hot function
+    // was being graded as perfectly parallelisable.
+    if (uniqueWriters.length === 1 && !keyedWriters) {
+      conflicts.push({
+        slot: accesses[0]?.slot || 'unknown',
+        variable,
+        functions: uniqueWriters,
+        severity: 'high',
+        description: `'${uniqueWriters[0]}' writes '${variable}', a single storage slot shared by every caller. Concurrent calls serialise against each other no matter who sends them.`
       });
     }
 
@@ -415,9 +431,12 @@ function calculateScore(
   score -= mediumConflicts * 8;
   score -= lowConflicts * 3;
 
-  // Bonus for parallelizable functions
+  // How much of the contract can actually run concurrently is the measurement;
+  // conflict counts are only the reason behind it. Treating the ratio as a small
+  // bonus let a contract whose every function serialises still score in the 80s,
+  // which is the one number a reader actually acts on.
   const parallelizableRatio = functions.filter(f => f.canParallelize).length / functions.length;
-  score += parallelizableRatio * 20;
+  score = score * (0.5 + 0.5 * parallelizableRatio);
 
   // Ensure score is within bounds
   score = Math.max(0, Math.min(100, Math.round(score)));

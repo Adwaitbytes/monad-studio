@@ -13,6 +13,8 @@
 
 // Types for analysis results
 export interface StorageAccess {
+  /** True when the access is to a mapping or array element rather than the whole slot. */
+  keyed?: boolean;
   slot: string;
   variable: string;
   type: 'read' | 'write';
@@ -245,15 +247,32 @@ function analyzeStorageAccess(
         });
       }
 
-      // Check for writes (variable on left of assignment)
-      const writePattern = new RegExp(`${variable.name}\\s*=|${variable.name}\\[[^\\]]+\\]\\s*=|${variable.name}\\s*\\+=|${variable.name}\\s*-=`, 'g');
+      // Writes. The earlier pattern required `=` immediately after the index,
+      // so `balances[to] += amt` was not recognised as a write at all, which is
+      // the single most common mutation in a token contract. Compound
+      // assignment, increment, decrement and delete are all writes.
+      const name = variable.name;
+      const index = `(?:\\[[^\\]]*\\])*`;
+      const writePattern = new RegExp(
+        `\\b${name}${index}\\s*(?:=(?!=)|\\+=|-=|\\*=|/=|%=|\\|=|&=|\\^=|<<=|>>=)` +
+        `|\\b${name}${index}\\s*(?:\\+\\+|--)` +
+        `|(?:\\+\\+|--)\\s*\\b${name}${index}` +
+        `|\\bdelete\\s+${name}${index}`
+      );
+
+      // Whether the write targets a mapping or array element rather than the
+      // whole variable. Monad conflicts at the storage slot, so two writes to
+      // different keys of the same mapping do not actually collide.
+      const keyedWrite = new RegExp(`\\b${name}\\s*\\[`).test(func.body);
+
       if (writePattern.test(func.body)) {
         access[variable.name].push({
           slot: `slot_${variable.slot}`,
           variable: variable.name,
           type: 'write',
           function: func.name,
-          line: func.line
+          line: func.line,
+          keyed: keyedWrite
         });
       }
     }
@@ -273,7 +292,10 @@ function detectConflicts(
 
   for (const [variable, accesses] of Object.entries(storageAccess)) {
     // Find all functions that write to this variable
-    const writers = accesses.filter(a => a.type === 'write').map(a => a.function);
+    const writeAccesses = accesses.filter(a => a.type === 'write');
+    const writers = writeAccesses.map(a => a.function);
+    // Every write goes through an index, so collisions are key-dependent.
+    const keyedWriters = writeAccesses.length > 0 && writeAccesses.every(a => a.keyed);
     // Find all functions that read from this variable
     const readers = accesses.filter(a => a.type === 'read').map(a => a.function);
 
@@ -286,8 +308,16 @@ function detectConflicts(
         slot: accesses[0]?.slot || 'unknown',
         variable,
         functions: uniqueWriters,
-        severity: 'high',
-        description: `Multiple functions (${uniqueWriters.join(', ')}) write to '${variable}'. These cannot execute in parallel.`
+        // Monad detects conflicts per storage slot. Two writes to the same
+        // scalar always hit one slot and always serialise. Two writes to a
+        // mapping only collide when the keys match, so transfers between
+        // unrelated accounts genuinely do run in parallel. Grading those as a
+        // hard conflict would tell people to restructure code that is already
+        // optimal.
+        severity: keyedWriters ? 'medium' : 'high',
+        description: keyedWriters
+          ? `Functions (${uniqueWriters.join(', ')}) write to '${variable}'. Because it is keyed, they only serialise when two transactions touch the same key. Independent keys execute in parallel.`
+          : `Multiple functions (${uniqueWriters.join(', ')}) write to '${variable}', a single storage slot. These always serialise.`
       });
     }
 
@@ -299,8 +329,10 @@ function detectConflicts(
           slot: accesses[0]?.slot || 'unknown',
           variable,
           functions: [writer, ...otherReaders],
-          severity: 'medium',
-          description: `Function '${writer}' writes to '${variable}' which is read by ${otherReaders.join(', ')}. Order-dependent execution required.`
+          severity: keyedWriters ? 'low' : 'medium',
+          description: keyedWriters
+            ? `'${writer}' writes '${variable}' while ${otherReaders.join(', ')} read it. Ordering only matters when the same key is involved.`
+            : `Function '${writer}' writes to '${variable}' which is read by ${otherReaders.join(', ')}. Order-dependent execution required.`
         });
       }
     }

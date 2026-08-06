@@ -20,16 +20,22 @@
  */
 
 import fs from "node:fs";
+import dotenv from "dotenv";
+
+// .env.local rather than .env: that is the file Next.js uses for local secrets
+// and the one this project already gitignores.
+dotenv.config({ path: ".env.local", quiet: true });
 import path from "node:path";
 import {
   createPublicClient,
+  encodeFunctionData,
   createWalletClient,
   defineChain,
   formatEther,
   http,
   parseEther,
 } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
 
 const monadTestnet = defineChain({
   id: 10143,
@@ -46,17 +52,43 @@ const flag = (name, fallback) => {
 
 const WALLETS = flag("wallets", 20);
 const ROUNDS = flag("rounds", 3);
-// Enough to cover gas for the round-trip plus headroom for base fee movement.
-const FUNDING = parseEther("0.02");
+// Monad charges the full gas limit rather than gas consumed, and the node
+// requires a balance comfortably above that before it will accept the
+// transaction at all. 0.02 was rejected outright with "insufficient balance".
+const FUNDING = parseEther("0.4");
+// Close to the measured 49,839 estimate. Because the limit is what gets
+// charged, padding it is not free the way it is on Ethereum.
+const GAS_LIMIT = 60_000n;
 
-const KEY = process.env.BENCH_PRIVATE_KEY;
-if (!KEY) {
-  console.error("Set BENCH_PRIVATE_KEY to a funded Monad testnet key.");
-  console.error("Get testnet MON from https://faucet.monad.xyz");
+/**
+ * The funding key, from the environment or from a mnemonic in .env.local.
+ *
+ * Reading it here rather than accepting it on the command line keeps it out of
+ * shell history, and .env.local is gitignored so it cannot be committed.
+ */
+function loadFunder() {
+  const direct = process.env.BENCH_PRIVATE_KEY;
+  if (direct) {
+    return privateKeyToAccount(direct.startsWith("0x") ? direct : `0x${direct}`);
+  }
+
+  const phrase = process.env.BENCH_MNEMONIC;
+  if (phrase) {
+    // Standard Ethereum derivation path, so this matches what a wallet shows
+    // as the first account for the same phrase.
+    return mnemonicToAccount(phrase.trim());
+  }
+
+  console.error("No funding key found.\n");
+  console.error("Add ONE of these to .env.local (gitignored, never committed):");
+  console.error("  BENCH_PRIVATE_KEY=0x...");
+  console.error("  BENCH_MNEMONIC=\"word word word ...\"\n");
+  console.error("Then run:  node scripts/benchmark.mjs --wallets 30 --rounds 3");
+  console.error("Fund the account first at https://faucet.monad.xyz");
   process.exit(1);
 }
 
-const master = privateKeyToAccount(KEY.startsWith("0x") ? KEY : `0x${KEY}`);
+const master = loadFunder();
 const transport = http(monadTestnet.rpcUrls.default.http[0]);
 const publicClient = createPublicClient({ chain: monadTestnet, transport });
 const masterWallet = createWalletClient({ account: master, chain: monadTestnet, transport });
@@ -69,6 +101,28 @@ const artifact = (name) => {
   }
   return JSON.parse(fs.readFileSync(p, "utf8"));
 };
+
+/**
+ * Retries on throttling.
+ *
+ * The public endpoint returns 429 under concurrent load. Without a backoff the
+ * benchmark measures the rate limiter rather than the chain, which is exactly
+ * the confound this whole design exists to avoid.
+ */
+async function withRetry(fn, attempts = 5) {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const message = String(error);
+      if (!message.includes("429") && !message.includes("rate limit")) throw error;
+      await new Promise((r) => setTimeout(r, 250 * 2 ** i));
+    }
+  }
+  throw lastError;
+}
 
 const percentile = (sorted, p) => {
   if (sorted.length === 0) return 0;
@@ -126,19 +180,39 @@ async function fundWallets(count) {
  * so nothing is serialised by nonce ordering and the only remaining constraint
  * is what the chain does with the storage they touch.
  */
-async function runRound(label, contract, wallets) {
+async function runRound(label, contract, wallets, nonces) {
+  // Everything that needs the network is done before the clock starts, so the
+  // measured window contains only submission and inclusion.
+  const data = encodeFunctionData({ abi: contract.abi, functionName: "touch", args: [] });
+  const gasPrice = await publicClient.getGasPrice();
+
+  const prepared = [];
+  for (const account of wallets) {
+    // Nonces are tracked locally. Re-reading them between rounds races the
+    // previous round still settling and the node rejects the whole batch.
+    const nonce = nonces.get(account.address) ?? 0;
+    nonces.set(account.address, nonce + 1);
+    const serialized = await account.signTransaction({
+      to: contract.address,
+      data,
+      nonce,
+      gas: GAS_LIMIT,
+      gasPrice: (gasPrice * 12n) / 10n,
+      chainId: monadTestnet.id,
+      type: "legacy",
+    });
+    prepared.push({ account, serialized });
+  }
+
   const started = Date.now();
 
-  const sends = wallets.map(async (account) => {
-    const wallet = createWalletClient({ account, chain: monadTestnet, transport });
+  const sends = prepared.map(async ({ account, serialized }) => {
     const sentAt = Date.now();
     try {
-      const hash = await wallet.writeContract({
-        address: contract.address,
-        abi: contract.abi,
-        functionName: "touch",
-        args: [],
-      });
+      // Pre-signed and sent raw. writeContract would estimate gas and fetch a
+      // nonce for every wallet first, tripling the request count and making the
+      // public endpoint's rate limit the thing being measured.
+      const hash = await withRetry(() => publicClient.sendRawTransaction({ serializedTransaction: serialized }));
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       return {
         ok: receipt.status === "success",
@@ -147,7 +221,7 @@ async function runRound(label, contract, wallets) {
         block: Number(receipt.blockNumber),
       };
     } catch (error) {
-      return { ok: false, latency: Date.now() - sentAt, error: String(error).slice(0, 90) };
+      return { ok: false, latency: Date.now() - sentAt, error: (error?.shortMessage ?? error?.details ?? String(error)).slice(0, 120) };
     }
   });
 
@@ -182,13 +256,13 @@ function report(rows) {
   console.log("RESULTS");
   console.log("=".repeat(78));
   console.log(
-    "  contract        round   confirmed   wall(s)   tx/s    median   p95    blocks  tx/blk"
+    "  contract       round  confirm  rate  wall(s)    tx/s   median   p95    blocks  tx/blk"
   );
   for (const r of rows) {
     console.log(
       `  ${r.label.padEnd(15)} ${pad(r.round, 3)}   ${pad(r.confirmed + "/" + r.submitted, 9)}` +
       `   ${pad((r.wallMs / 1000).toFixed(2), 7)}   ${pad(r.throughput.toFixed(2), 5)}` +
-      `   ${pad(r.medianMs, 6)}   ${pad(r.p95Ms, 5)}  ${pad(r.blocksSpanned, 6)}  ${pad(r.txPerBlock.toFixed(1), 6)}`
+      `  ${pad(r.medianMs, 6)}  ${pad(r.p95Ms, 5)}  ${pad(r.blocksSpanned, 6)}  ${pad(r.txPerBlock.toFixed(1), 6)}`
     );
   }
 
@@ -250,6 +324,12 @@ async function main() {
 
   const wallets = await fundWallets(WALLETS);
 
+  // Seeded once from chain, then advanced locally.
+  const nonces = new Map();
+  for (const account of wallets) {
+    nonces.set(account.address, await publicClient.getTransactionCount({ address: account.address }));
+  }
+
   const rows = [];
   for (let round = 1; round <= ROUNDS; round++) {
     console.log(`\nRound ${round}/${ROUNDS}`);
@@ -262,7 +342,7 @@ async function main() {
 
     for (const [label, contract] of order) {
       process.stdout.write(`  ${label}...`);
-      const result = await runRound(label, contract, wallets);
+      const result = await runRound(label, contract, wallets, nonces);
       rows.push({ ...result, round });
       console.log(
         ` ${result.confirmed}/${result.submitted} in ${(result.wallMs / 1000).toFixed(2)}s` +

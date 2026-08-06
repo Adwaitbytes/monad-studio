@@ -206,7 +206,7 @@ async function runRound(label, contract, wallets, nonces) {
 
   const started = Date.now();
 
-  const sends = prepared.map(async ({ account, serialized }) => {
+  const sends = prepared.map(async ({ serialized }) => {
     const sentAt = Date.now();
     try {
       // Pre-signed and sent raw. writeContract would estimate gas and fetch a

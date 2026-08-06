@@ -381,7 +381,12 @@ function analyzeFunctions(
       visibility: func.visibility,
       reads,
       writes,
-      canParallelize: !hasHighConflict && writes.length === 0,
+      // Writing does not by itself prevent parallel execution. A function that
+      // writes only its own mapping key contends with nothing and runs
+      // alongside anything else. Requiring zero writes counted every state
+      // change as serial and reported healthy contracts as having no
+      // parallelisable functions at all.
+      canParallelize: !hasHighConflict,
       conflictsWith
     };
   });
